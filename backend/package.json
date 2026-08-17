@@ -1,0 +1,30 @@
+{
+  "name": "ishyiga-whatsapp-assistant",
+  "version": "0.1.0",
+  "description": "AI-powered WhatsApp assistant backend (WhatsApp Cloud API + OpenAI GPT-5)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "node src/db/migrate.js",
+    "test": "node --test \"tests/**/*.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "whatsapp",
+    "openai",
+    "express"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "openai": "^7.4.0",
+    "pg": "^8.23.0"
+  }
+}
