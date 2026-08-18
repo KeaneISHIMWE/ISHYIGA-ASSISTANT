@@ -5,6 +5,9 @@ const {
   verifyWebhook,
   isValidSignature,
   processIncomingMessage,
+  sendTextMessage,
+  classifyWhatsAppSendError,
+  isRetryableSendResult,
 } = require("../src/services/whatsappService");
 
 const VERIFY_TOKEN = "test-verify-token";
@@ -142,5 +145,153 @@ describe("processIncomingMessage", () => {
     const result = processIncomingMessage({ object: "page", entry: [] });
     assert.equal(result.ok, false);
     assert.equal(result.statusCode, 404);
+  });
+});
+
+describe("classifyWhatsAppSendError", () => {
+  it("classifies timeouts", () => {
+    assert.equal(
+      classifyWhatsAppSendError({ name: "TimeoutError" }, undefined),
+      "timeout"
+    );
+  });
+
+  it("classifies auth failures", () => {
+    assert.equal(classifyWhatsAppSendError(null, 401), "auth");
+  });
+
+  it("classifies other API errors", () => {
+    assert.equal(classifyWhatsAppSendError(null, 500), "api_error");
+  });
+});
+
+describe("isRetryableSendResult", () => {
+  it("retries timeouts and Meta server errors only", () => {
+    assert.equal(isRetryableSendResult({ ok: false, error: "timeout" }), true);
+    assert.equal(
+      isRetryableSendResult({ ok: false, error: "api_error", status: 500 }),
+      true
+    );
+    assert.equal(isRetryableSendResult({ ok: false, error: "auth" }), false);
+  });
+});
+
+describe("sendTextMessage", () => {
+  it("posts a text payload to the Cloud API", async () => {
+    const calls = [];
+    const result = await sendTextMessage({
+      to: "250788000000",
+      body: "We can help with the company's services.",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      apiVersion: "v21.0",
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ messages: [{ id: "wamid.OUT1" }] }),
+        };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.outboundId, "wamid.OUT1");
+    assert.equal(calls.length, 1);
+    assert.equal(
+      calls[0].url,
+      "https://graph.facebook.com/v21.0/123456789/messages"
+    );
+    assert.equal(calls[0].options.method, "POST");
+
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.messaging_product, "whatsapp");
+    assert.equal(payload.to, "250788000000");
+    assert.equal(payload.type, "text");
+    assert.equal(payload.text.body, "We can help with the company's services.");
+  });
+
+  it("returns a fallback error when Meta is not configured", async () => {
+    const result = await sendTextMessage({
+      to: "250788000000",
+      body: "Hello",
+      accessToken: "",
+      phoneNumberId: "",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "not_configured");
+  });
+
+  it("returns a fallback error on auth failure without throwing", async () => {
+    const result = await sendTextMessage({
+      to: "250788000000",
+      body: "Hello",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      fetchFn: async () => ({
+        ok: false,
+        status: 401,
+        json: async () => ({}),
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "auth");
+  });
+
+  it("rejects a missing message body", async () => {
+    const result = await sendTextMessage({
+      to: "250788000000",
+      body: "   ",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "invalid_input");
+  });
+
+  it("retries once after a Meta server error", async () => {
+    let attempts = 0;
+    const result = await sendTextMessage({
+      to: "250788000000",
+      body: "Hello",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      fetchFn: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return { ok: false, status: 503, json: async () => ({}) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ messages: [{ id: "wamid.RETRY" }] }),
+        };
+      },
+    });
+
+    assert.equal(attempts, 2);
+    assert.equal(result.ok, true);
+    assert.equal(result.outboundId, "wamid.RETRY");
+  });
+
+  it("does not retry auth failures", async () => {
+    let attempts = 0;
+    const result = await sendTextMessage({
+      to: "250788000000",
+      body: "Hello",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      fetchFn: async () => {
+        attempts += 1;
+        return { ok: false, status: 401, json: async () => ({}) };
+      },
+    });
+
+    assert.equal(attempts, 1);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "auth");
   });
 });

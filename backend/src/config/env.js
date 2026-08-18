@@ -26,8 +26,8 @@ const env = {
   whatsappAccessToken: readEnv("WHATSAPP_ACCESS_TOKEN", ""),
   whatsappPhoneNumberId: readEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
   whatsappApiVersion: readEnv("WHATSAPP_API_VERSION", "v21.0"),
-  openaiApiKey: readEnv("OPENAI_API_KEY", ""),
-  openaiModel: readEnv("OPENAI_MODEL", "gpt-5"),
+  groqApiKey: readEnv("GROQ_API_KEY", ""),
+  groqModel: readEnv("GROQ_MODEL", "openai/gpt-oss-20b"),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {

@@ -8,8 +8,8 @@ async function createMessage(req, res) {
     return res.status(400).json({ error: "message is required" });
   }
 
-  if (!env.openaiApiKey) {
-    return res.status(503).json({ error: "OpenAI is not configured" });
+  if (!env.groqApiKey) {
+    return res.status(503).json({ error: "Groq is not configured" });
   }
 
   const result = await generateReply({ message: message.trim() });

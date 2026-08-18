@@ -10,9 +10,17 @@ const {
 
 function fakeClient(create) {
   return {
-    responses: {
-      create,
+    chat: {
+      completions: {
+        create,
+      },
     },
+  };
+}
+
+function completion(content) {
+  return {
+    choices: [{ message: { content } }],
   };
 }
 
@@ -68,12 +76,12 @@ describe("classifyOpenAIError", () => {
 });
 
 describe("generateReply", () => {
-  it("returns the model text from a successful Responses API call", async () => {
+  it("returns the model text from a successful Groq chat completion", async () => {
     const result = await generateReply({
       message: "Hello, what services do you offer?",
-      client: fakeClient(async () => ({
-        output_text: "We help customers with the company's products and services.",
-      })),
+      client: fakeClient(async () =>
+        completion("We help customers with the company's products and services.")
+      ),
     });
 
     assert.equal(result.ok, true);
@@ -83,7 +91,7 @@ describe("generateReply", () => {
   it("returns a fallback when the model response is empty", async () => {
     const result = await generateReply({
       message: "Hello",
-      client: fakeClient(async () => ({ output_text: "   " })),
+      client: fakeClient(async () => completion("   ")),
     });
 
     assert.equal(result.ok, false);
@@ -119,6 +127,22 @@ describe("generateReply", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "rate_limit");
+  });
+
+  it("returns a fallback on insufficient quota without throwing", async () => {
+    const result = await generateReply({
+      message: "Hello",
+      client: fakeClient(async () => {
+        const error = new Error("You exceeded your current quota");
+        error.status = 429;
+        error.code = "insufficient_quota";
+        throw error;
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.error, "insufficient_quota");
   });
 
   it("rejects a missing message", async () => {

@@ -1,4 +1,4 @@
-const { pool } = require("../config/db");
+const { pool, isUniqueViolation } = require("../config/db");
 
 async function findOpenByCustomerId(customerId) {
   const result = await pool.query(
@@ -26,7 +26,25 @@ async function create({ customerId, status = "open" }) {
   return result.rows[0];
 }
 
+async function findOrCreateOpen({ customerId }) {
+  const existing = await findOpenByCustomerId(customerId);
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await create({ customerId, status: "open" });
+  } catch (error) {
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+
+    return findOpenByCustomerId(customerId);
+  }
+}
+
 module.exports = {
   findOpenByCustomerId,
   create,
+  findOrCreateOpen,
 };

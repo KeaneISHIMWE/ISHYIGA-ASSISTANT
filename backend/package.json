@@ -1,11 +1,11 @@
 {
   "name": "ishyiga-whatsapp-assistant",
   "version": "0.1.0",
-  "description": "AI-powered WhatsApp assistant backend (WhatsApp Cloud API + OpenAI GPT-5)",
+  "description": "AI-powered WhatsApp assistant backend (WhatsApp Cloud API + Groq)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "dev": "node --watch --watch-path=src src/server.js",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "node src/db/migrate.js",
@@ -16,7 +16,7 @@
   },
   "keywords": [
     "whatsapp",
-    "openai",
+    "groq",
     "express"
   ],
   "license": "UNLICENSED",

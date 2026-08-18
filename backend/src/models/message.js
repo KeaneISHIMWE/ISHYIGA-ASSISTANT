@@ -1,6 +1,4 @@
-const { pool } = require("../config/db");
-
-const DEFAULT_HISTORY_LIMIT = 20;
+const { pool, isUniqueViolation } = require("../config/db");
 
 async function create({
   conversationId,
@@ -34,10 +32,7 @@ async function create({
   return result.rows[0];
 }
 
-async function listRecentByConversationId(
-  conversationId,
-  limit = DEFAULT_HISTORY_LIMIT
-) {
+async function listByConversationId(conversationId) {
   const result = await pool.query(
     `
       SELECT
@@ -50,7 +45,28 @@ async function listRecentByConversationId(
         created_at
       FROM messages
       WHERE conversation_id = $1
-      ORDER BY created_at DESC
+      ORDER BY created_at ASC, id ASC
+    `,
+    [conversationId]
+  );
+
+  return result.rows;
+}
+
+async function listRecentByConversationId(conversationId, limit = 20) {
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        conversation_id,
+        whatsapp_message_id,
+        sender_type,
+        message,
+        message_type,
+        created_at
+      FROM messages
+      WHERE conversation_id = $1
+      ORDER BY created_at DESC, id DESC
       LIMIT $2
     `,
     [conversationId, limit]
@@ -59,7 +75,46 @@ async function listRecentByConversationId(
   return result.rows.reverse();
 }
 
+async function findByWhatsappMessageId(whatsappMessageId) {
+  if (!whatsappMessageId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        conversation_id,
+        whatsapp_message_id,
+        sender_type,
+        message,
+        message_type,
+        created_at
+      FROM messages
+      WHERE whatsapp_message_id = $1
+    `,
+    [whatsappMessageId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function createIfNew(input) {
+  try {
+    return await create(input);
+  } catch (error) {
+    if (!isUniqueViolation(error) || !input.whatsappMessageId) {
+      throw error;
+    }
+
+    return findByWhatsappMessageId(input.whatsappMessageId);
+  }
+}
+
 module.exports = {
   create,
+  createIfNew,
+  findByWhatsappMessageId,
+  listByConversationId,
   listRecentByConversationId,
 };

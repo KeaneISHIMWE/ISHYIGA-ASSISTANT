@@ -1,4 +1,4 @@
-const { pool } = require("../config/db");
+const { pool, isUniqueViolation } = require("../config/db");
 
 async function findByWhatsappNumber(whatsappNumber) {
   const result = await pool.query(
@@ -26,7 +26,25 @@ async function create({ whatsappNumber, name = null }) {
   return result.rows[0];
 }
 
+async function findOrCreate({ whatsappNumber, name = null }) {
+  const existing = await findByWhatsappNumber(whatsappNumber);
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await create({ whatsappNumber, name });
+  } catch (error) {
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+
+    return findByWhatsappNumber(whatsappNumber);
+  }
+}
+
 module.exports = {
   findByWhatsappNumber,
   create,
+  findOrCreate,
 };

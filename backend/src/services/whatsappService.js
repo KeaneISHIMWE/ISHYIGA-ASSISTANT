@@ -4,6 +4,7 @@ const { safeEqual, sha256HmacHex } = require("../utils/crypto");
 
 const WHATSAPP_OBJECT = "whatsapp_business_account";
 const MESSAGES_FIELD = "messages";
+const SEND_TIMEOUT_MS = 20_000;
 
 function verifyWebhook({ mode, token, challenge }, expectedToken) {
   if (mode !== "subscribe" || !token || !challenge) {
@@ -119,8 +120,125 @@ function processIncomingMessage(payload) {
   return { ok: true, events };
 }
 
-async function sendTextMessage() {
-  throw new Error("Sending WhatsApp replies is not enabled yet");
+function isRetryableSendResult(result) {
+  if (!result || result.ok) {
+    return false;
+  }
+
+  if (result.error === "timeout" || result.error === "rate_limit") {
+    return true;
+  }
+
+  return Number(result.status) >= 500;
+}
+
+function classifyWhatsAppSendError(error, status) {
+  const name = error && error.name ? error.name : "";
+  const message = error && typeof error.message === "string" ? error.message : "";
+
+  if (
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    /timeout/i.test(message)
+  ) {
+    return "timeout";
+  }
+
+  if (status === 401 || status === 403) {
+    return "auth";
+  }
+
+  if (status === 429) {
+    return "rate_limit";
+  }
+
+  return "api_error";
+}
+
+async function sendTextMessage({
+  to,
+  body,
+  fetchFn = fetch,
+  accessToken = env.whatsappAccessToken,
+  phoneNumberId = env.whatsappPhoneNumberId,
+  apiVersion = env.whatsappApiVersion,
+} = {}) {
+  if (typeof to !== "string" || !to.trim() || typeof body !== "string" || !body.trim()) {
+    logger.error("WhatsApp send failed", { reason: "invalid_input" });
+    return { ok: false, error: "invalid_input" };
+  }
+
+  if (!accessToken || !phoneNumberId) {
+    logger.error("WhatsApp send failed", { reason: "not_configured" });
+    return { ok: false, error: "not_configured" };
+  }
+
+  const recipient = to.trim();
+  const text = body.trim();
+  const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+
+  async function postOnce(attempt) {
+    logger.info(attempt === 1 ? "WhatsApp send started" : "WhatsApp send retry", {
+      customer: maskPhoneNumber(recipient),
+      attempt,
+    });
+
+    try {
+      const response = await fetchFn(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to: recipient,
+          type: "text",
+          text: {
+            preview_url: false,
+            body: text,
+          },
+        }),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        const reason = classifyWhatsAppSendError(null, response.status);
+        logger.error("WhatsApp send failed", {
+          reason,
+          status: response.status,
+          attempt,
+        });
+        return { ok: false, error: reason, status: response.status };
+      }
+
+      const data = await response.json();
+      const outboundId =
+        data && data.messages && data.messages[0] && data.messages[0].id
+          ? data.messages[0].id
+          : null;
+
+      logger.info("WhatsApp send completed", {
+        customer: maskPhoneNumber(recipient),
+        hasOutboundId: Boolean(outboundId),
+        attempt,
+      });
+
+      return { ok: true, outboundId };
+    } catch (error) {
+      const reason = classifyWhatsAppSendError(error, error.status);
+      logger.error("WhatsApp send failed", { reason, attempt });
+      return { ok: false, error: reason };
+    }
+  }
+
+  const first = await postOnce(1);
+  if (first.ok || !isRetryableSendResult(first)) {
+    return first;
+  }
+
+  return postOnce(2);
 }
 
 function logProcessedEvents(events) {
@@ -148,8 +266,11 @@ module.exports = {
   isValidSignature,
   processIncomingMessage,
   sendTextMessage,
+  classifyWhatsAppSendError,
+  isRetryableSendResult,
   logProcessedEvents,
   maskPhoneNumber,
   getVerifyToken,
   getAppSecret,
+  SEND_TIMEOUT_MS,
 };

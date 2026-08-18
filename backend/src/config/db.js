@@ -67,4 +67,13 @@ async function checkDatabaseSchema() {
   }
 }
 
-module.exports = { pool, checkDatabaseConnection, checkDatabaseSchema };
+function isUniqueViolation(error) {
+  return Boolean(error && error.code === "23505");
+}
+
+module.exports = {
+  pool,
+  checkDatabaseConnection,
+  checkDatabaseSchema,
+  isUniqueViolation,
+};

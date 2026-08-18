@@ -1,6 +1,6 @@
 # Ishyiga WhatsApp AI Assistant
 
-Backend for a company WhatsApp assistant: customers message WhatsApp, the server replies with GPT-5.
+Backend for a company WhatsApp assistant: customers message WhatsApp, the server replies with Groq.
 
 ## Phase 1 — Express server
 
@@ -60,15 +60,15 @@ The response body must be the raw challenge `1158201444`, not JSON.
 npm test
 ```
 
-## Phase 6 — OpenAI (GPT-5)
+## Phase 6 — Groq
 
-`POST /api/messages` calls GPT-5 through a dedicated OpenAI service. WhatsApp still does not send a reply.
+`POST /api/messages` calls Groq through the existing OpenAI-compatible client. WhatsApp still does not send a reply.
 
-Put your key in `.env` (do not paste it into chat):
+Create a free key at [console.groq.com/keys](https://console.groq.com/keys) and put it in `.env` (do not paste it into chat):
 
 ```
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-20b
 ```
 
 Run tests:
@@ -84,4 +84,59 @@ Live local check, with `npm run dev` running:
 Invoke-RestMethod -Method Post -Uri http://localhost:4000/api/messages -ContentType "application/json" -Body '{"message":"Hello, what services do you offer?"}'
 ```
 
-Expect JSON with a `reply` from GPT-5. The server log should include `OpenAI request started` and `OpenAI response received`.
+Expect JSON with `"ok": true` and a real `reply`. The server log should include `Groq request started` and `Groq response received`.
+
+If Groq returns a rate limit, timeout, or another API error, the reply is this fallback (the process does not crash):
+
+`Sorry, I could not generate a reply just now. Please try again in a moment.`
+
+## Phase 7 — Webhook to Groq
+
+`POST /webhook` still answers Meta with `{ "status": "received" }` first. Then each inbound text is sent to the same Groq service. The reply is logged.
+
+Unsupported message types (images, stickers, and so on) are skipped.
+
+## Phase 8 — Send the reply on WhatsApp
+
+After Groq returns text, Node calls the WhatsApp Cloud API:
+
+`POST https://graph.facebook.com/{version}/{phone-number-id}/messages`
+
+Meta then delivers that text to the customer. The webhook still answers `{ "status": "received" }` first so Meta does not retry while Groq and the send are running.
+
+Needs `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in `.env`. Temporary Meta tokens expire (often about 24 hours). If send logs `auth`, generate a new token in Graph API Explorer and save it locally. Do not paste it into chat.
+
+Live check: keep `npm run dev` and one ngrok tunnel running, then send a text to the test WhatsApp number. Expect logs `Groq response received` and `WhatsApp send completed`. The same text should appear in WhatsApp.
+
+If Meta send fails (expired token, rate limit, timeout), the process does not crash. The customer may not see a reply that time.
+
+## Phase 9 — Persist the conversation
+
+After Meta is acknowledged, each text event is stored:
+
+1. Find or create the `customers` row for the WhatsApp number.
+2. Find or create one `open` conversation.
+3. Save the inbound text as `sender_type = customer`.
+4. After Groq and the WhatsApp send, save the reply as `sender_type = assistant`.
+
+A database write failure is logged and does not block the WhatsApp reply. Duplicate inbound WhatsApp message ids are ignored.
+
+Health reports `phase: 9`.
+
+## Phase 10 — Chat memory
+
+Before Groq runs, the webhook loads every saved message for that open conversation (not including the current inbound text). Those turns are passed as `history` so the model can use the full WhatsApp thread.
+
+If history cannot be loaded, Groq still runs with only the current message. The server log `Groq request started` includes `historyCount`.
+
+Health reports `phase: 10`.
+
+## Phase 11 — Safer failures
+
+`GET /api/health` now includes `integrations.groqConfigured` and `integrations.whatsappSendConfigured` (booleans only, no secrets).
+
+WhatsApp send retries **once** on timeout, rate limit, or Meta 5xx. Auth and bad input are not retried.
+
+An assistant reply is stored only if Meta accepted the send, so memory does not keep a message the customer never saw.
+
+Health reports `phase: 11`. Deploy is the next phase.
