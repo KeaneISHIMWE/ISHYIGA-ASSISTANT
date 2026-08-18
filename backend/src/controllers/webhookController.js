@@ -10,6 +10,7 @@ const {
   isValidSignature,
   processIncomingMessage,
   sendTextMessage,
+  markReadAndShowTyping,
   logProcessedEvents,
   maskPhoneNumber,
   getVerifyToken,
@@ -104,6 +105,7 @@ async function processTextEvents(
     loadHistory = loadRecentHistory,
     generateReplyFn = generateReply,
     sendTextMessageFn = sendTextMessage,
+    markReadAndShowTypingFn = markReadAndShowTyping,
     persistOutbound = persistOutboundReply,
   } = {}
 ) {
@@ -112,6 +114,12 @@ async function processTextEvents(
   for (const event of events) {
     if (!event || event.kind !== "text" || !event.message) {
       continue;
+    }
+
+    try {
+      await markReadAndShowTypingFn({ messageId: event.messageId });
+    } catch (_error) {
+      logger.error("WhatsApp read/typing failed", { reason: "unhandled" });
     }
 
     const inbound = await persistInbound(event);

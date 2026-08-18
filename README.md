@@ -28,9 +28,9 @@ AI-powered WhatsApp assistant for a company. Customers write on WhatsApp; the ba
 | Persist inbound/outbound messages from WhatsApp | Ready |
 | Full chat memory for Groq | Ready |
 | Safer failures (retry + health flags) | Ready |
-| Deploy | Next |
+| Production start + host configs | Ready |
 
-Health endpoint reports `phase: 11`.
+Health endpoint reports `phase: 12`.
 
 ## Tech stack
 
@@ -46,6 +46,9 @@ Health endpoint reports `phase: 11`.
 ```
 ISHYIGA/
 ├── README.md
+├── Dockerfile                 # Railway image from repo root
+├── railway.toml
+├── render.yaml
 ├── .gitignore
 └── backend/
     ├── src/
@@ -61,9 +64,13 @@ ISHYIGA/
     │   └── utils/
     ├── tests/
     ├── docker-compose.yml         # local Postgres
+    ├── Dockerfile                 # production image
+    ├── railway.toml
     ├── .env.example
     └── package.json
 ```
+
+Root `render.yaml` is a Render blueprint (`rootDir: backend`).
 
 ## Prerequisites
 
@@ -116,7 +123,7 @@ A healthy response looks like:
 {
   "status": "ok",
   "service": "ishyiga-whatsapp-assistant",
-  "phase": 6,
+  "phase": 12,
   "database": {
     "connected": true,
     "schemaReady": true
@@ -207,10 +214,23 @@ Run `npm run db:migrate` after changing the schema.
 | --- | --- |
 | `npm run dev` | Start with `--watch` on `src/` (restart after `.env` changes) |
 | `npm start` | Start without watch |
+| `npm run start:prod` | Apply migrations, then start (use this on Railway/Render) |
 | `npm test` | Run Groq and WhatsApp service tests |
 | `npm run db:migrate` | Apply SQL migrations |
 | `npm run db:up` | Start local Postgres |
 | `npm run db:down` | Stop local Postgres |
+
+## Deploy (Phase 12)
+
+Host the **`backend/`** folder, not the repo root. The process listens on `0.0.0.0` and `$PORT`. First boot runs `npm run start:prod` so tables exist before traffic arrives.
+
+**Railway:** new GitHub service, Root Directory `backend`, paste the env vars from local `.env`, deploy. Health URL: `https://<app>.up.railway.app/api/health`.
+
+**Render:** new Web Service or the root `render.yaml` blueprint. Root Directory `backend`, start command `npm run start:prod`. Health URL: `https://<app>.onrender.com/api/health`.
+
+Then in Meta, change the webhook from ngrok to `https://<your-host>/webhook`. Keep the same `WHATSAPP_VERIFY_TOKEN`. After that, the laptop and ngrok are not part of the live path.
+
+Required host variables: `NODE_ENV=production`, `DATABASE_URL`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `GROQ_API_KEY`. Optional but recommended: `WHATSAPP_APP_SECRET`. Do not commit real values.
 
 ```bash
 cd backend

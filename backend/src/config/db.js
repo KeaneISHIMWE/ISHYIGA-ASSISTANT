@@ -1,9 +1,11 @@
 const { Pool } = require("pg");
 const { env } = require("./env");
 const { logger } = require("../utils/logger");
+const { resolvePoolSsl } = require("./dbSsl");
 
 const pool = new Pool({
   connectionString: env.databaseUrl,
+  ssl: resolvePoolSsl(env.databaseUrl, env.nodeEnv),
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
@@ -76,4 +78,5 @@ module.exports = {
   checkDatabaseConnection,
   checkDatabaseSchema,
   isUniqueViolation,
+  resolvePoolSsl,
 };

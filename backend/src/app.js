@@ -1,10 +1,15 @@
 const express = require("express");
+const { env } = require("./config/env");
 const { requestLogger } = require("./middleware/requestLogger");
 const { healthRouter } = require("./routes/health");
 const { messagesRouter } = require("./routes/messages");
 const { webhookRouter } = require("./routes/webhook");
 
 const app = express();
+
+if (env.nodeEnv === "production") {
+  app.set("trust proxy", 1);
+}
 
 app.use(
   express.json({

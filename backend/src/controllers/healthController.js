@@ -14,7 +14,7 @@ async function getHealth(_req, res) {
   res.status(healthy ? 200 : 503).json({
     status: healthy ? "ok" : "degraded",
     service: "ishyiga-whatsapp-assistant",
-    phase: 11,
+    phase: 12,
     timestamp: new Date().toISOString(),
     database: {
       connected: connection.connected,

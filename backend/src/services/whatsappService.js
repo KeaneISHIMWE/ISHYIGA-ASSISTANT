@@ -120,6 +120,10 @@ function processIncomingMessage(payload) {
   return { ok: true, events };
 }
 
+function getMessagesUrl(apiVersion, phoneNumberId) {
+  return `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+}
+
 function isRetryableSendResult(result) {
   if (!result || result.ok) {
     return false;
@@ -175,7 +179,7 @@ async function sendTextMessage({
 
   const recipient = to.trim();
   const text = body.trim();
-  const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+  const url = getMessagesUrl(apiVersion, phoneNumberId);
 
   async function postOnce(attempt) {
     logger.info(attempt === 1 ? "WhatsApp send started" : "WhatsApp send retry", {
@@ -241,6 +245,62 @@ async function sendTextMessage({
   return postOnce(2);
 }
 
+async function markReadAndShowTyping({
+  messageId,
+  fetchFn = fetch,
+  accessToken = env.whatsappAccessToken,
+  phoneNumberId = env.whatsappPhoneNumberId,
+  apiVersion = env.whatsappApiVersion,
+} = {}) {
+  if (typeof messageId !== "string" || !messageId.trim()) {
+    logger.error("WhatsApp read/typing failed", { reason: "invalid_input" });
+    return { ok: false, error: "invalid_input" };
+  }
+
+  if (!accessToken || !phoneNumberId) {
+    logger.error("WhatsApp read/typing failed", { reason: "not_configured" });
+    return { ok: false, error: "not_configured" };
+  }
+
+  const inboundId = messageId.trim();
+  const url = getMessagesUrl(apiVersion, phoneNumberId);
+
+  try {
+    const response = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: inboundId,
+        typing_indicator: {
+          type: "text",
+        },
+      }),
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const reason = classifyWhatsAppSendError(null, response.status);
+      logger.error("WhatsApp read/typing failed", {
+        reason,
+        status: response.status,
+      });
+      return { ok: false, error: reason, status: response.status };
+    }
+
+    logger.info("WhatsApp read/typing shown", { messageId: inboundId });
+    return { ok: true };
+  } catch (error) {
+    const reason = classifyWhatsAppSendError(error, error.status);
+    logger.error("WhatsApp read/typing failed", { reason });
+    return { ok: false, error: reason };
+  }
+}
+
 function logProcessedEvents(events) {
   for (const event of events) {
     logger.info("WhatsApp message received", {
@@ -266,6 +326,7 @@ module.exports = {
   isValidSignature,
   processIncomingMessage,
   sendTextMessage,
+  markReadAndShowTyping,
   classifyWhatsAppSendError,
   isRetryableSendResult,
   logProcessedEvents,

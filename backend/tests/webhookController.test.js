@@ -138,6 +138,10 @@ describe("processTextEvents", () => {
           steps.push(`groq:${message}:${history.length}`);
           return { ok: true, reply: "We can help." };
         },
+        markReadAndShowTypingFn: async ({ messageId }) => {
+          steps.push(`typing:${messageId}`);
+          return { ok: true };
+        },
         sendTextMessageFn: async ({ to }) => {
           steps.push(`send:${to}`);
           return { ok: true, outboundId: "wamid.OUT1" };
@@ -150,6 +154,7 @@ describe("processTextEvents", () => {
     );
 
     assert.deepEqual(steps, [
+      "typing:wamid.1",
       "inbound:wamid.1",
       "history:conv-1",
       "groq:Hello:1",
@@ -173,6 +178,7 @@ describe("processTextEvents", () => {
         },
       ],
       {
+        markReadAndShowTypingFn: async () => ({ ok: true }),
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
         generateReplyFn: async () => ({ ok: true, reply: "We can help." }),
@@ -186,5 +192,31 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].sent, false);
     assert.equal(outboundCalls.length, 0);
+  });
+
+  it("still replies when read/typing fails", async () => {
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.1",
+          customerNumber: "250788000000",
+          message: "Hello",
+        },
+      ],
+      {
+        markReadAndShowTypingFn: async () => {
+          throw new Error("network");
+        },
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        generateReplyFn: async () => ({ ok: true, reply: "We can help." }),
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.equal(results[0].sent, true);
+    assert.equal(results[0].reply, "We can help.");
   });
 });

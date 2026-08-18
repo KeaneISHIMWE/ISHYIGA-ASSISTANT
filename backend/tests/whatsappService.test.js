@@ -6,6 +6,7 @@ const {
   isValidSignature,
   processIncomingMessage,
   sendTextMessage,
+  markReadAndShowTyping,
   classifyWhatsAppSendError,
   isRetryableSendResult,
 } = require("../src/services/whatsappService");
@@ -293,5 +294,61 @@ describe("sendTextMessage", () => {
     assert.equal(attempts, 1);
     assert.equal(result.ok, false);
     assert.equal(result.error, "auth");
+  });
+});
+
+describe("markReadAndShowTyping", () => {
+  it("marks the inbound message read and shows typing", async () => {
+    const calls = [];
+    const result = await markReadAndShowTyping({
+      messageId: "wamid.TEST123",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      apiVersion: "v21.0",
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(
+      calls[0].url,
+      "https://graph.facebook.com/v21.0/123456789/messages"
+    );
+
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.messaging_product, "whatsapp");
+    assert.equal(payload.status, "read");
+    assert.equal(payload.message_id, "wamid.TEST123");
+    assert.equal(payload.typing_indicator.type, "text");
+  });
+
+  it("returns a fallback error when Meta is not configured", async () => {
+    const result = await markReadAndShowTyping({
+      messageId: "wamid.TEST123",
+      accessToken: "",
+      phoneNumberId: "",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "not_configured");
+  });
+
+  it("keeps the process up when Meta rejects the request", async () => {
+    const result = await markReadAndShowTyping({
+      messageId: "wamid.TEST123",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      fetchFn: async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({}),
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "api_error");
   });
 });

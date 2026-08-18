@@ -139,4 +139,59 @@ WhatsApp send retries **once** on timeout, rate limit, or Meta 5xx. Auth and bad
 
 An assistant reply is stored only if Meta accepted the send, so memory does not keep a message the customer never saw.
 
-Health reports `phase: 11`. Deploy is the next phase.
+Health reports `phase: 11`.
+
+## Phase 12 — Production deploy
+
+The host must run from the `backend/` folder. On first start it applies migrations, then listens on `0.0.0.0:$PORT`.
+
+```bash
+cd backend
+npm run start:prod
+```
+
+`GET /api/health` is the platform health check. A live service reports `phase: 12`.
+
+### Environment variables on the host
+
+Copy values from local `.env`. Do not commit them.
+
+| Variable | Required |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | Neon (or other hosted Postgres) URL |
+| `WHATSAPP_VERIFY_TOKEN` | Same string you will put in Meta |
+| `WHATSAPP_ACCESS_TOKEN` | Long-lived Meta token |
+| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp sender id |
+| `WHATSAPP_APP_SECRET` | Recommended so webhook signatures are checked |
+| `GROQ_API_KEY` | Groq key |
+| `GROQ_MODEL` | Default `openai/gpt-oss-20b` |
+
+`PORT` is set by Railway/Render. SSL is turned on automatically for Neon URLs and for `NODE_ENV=production`.
+
+### Railway
+
+1. Push this repo to GitHub.
+2. New project → Deploy from GitHub.
+3. Set **Root Directory** to `backend`.
+4. Add the variables above.
+5. Deploy. Open `https://<your-app>.up.railway.app/api/health`.
+
+`backend/railway.toml` already sets `npm run start:prod` and the health path.
+
+### Render
+
+1. New **Web Service** from the same GitHub repo, or use the root `render.yaml` blueprint.
+2. **Root Directory:** `backend`.
+3. **Build:** `npm ci --omit=dev`
+4. **Start:** `npm run start:prod`
+5. Add the same variables, then deploy.
+6. Open `https://<your-app>.onrender.com/api/health`.
+
+### Point Meta at the public URL
+
+In Meta → WhatsApp → Configuration, set the callback URL to:
+
+`https://<your-host>/webhook`
+
+Use the same verify token as `WHATSAPP_VERIFY_TOKEN`. Subscribe to `messages`. After that, ngrok is no longer needed.
