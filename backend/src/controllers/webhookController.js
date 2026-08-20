@@ -11,6 +11,7 @@ const {
   processIncomingMessage,
   sendTextMessage,
   markReadAndShowTyping,
+  downloadWhatsAppMedia,
   logProcessedEvents,
   maskPhoneNumber,
   getVerifyToken,
@@ -18,6 +19,8 @@ const {
 } = require("../services/whatsappService");
 
 const TYPING_MIN_VISIBLE_MS = 2_000;
+const IMAGE_UNREADABLE_REPLY =
+  "I received your screenshot, but I could not open it. Please send it again, or describe the error you see.";
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -121,6 +124,7 @@ async function processTextEvents(
     generateReplyFn = generateReply,
     sendTextMessageFn = sendTextMessage,
     markReadAndShowTypingFn = markReadAndShowTyping,
+    downloadMediaFn = downloadWhatsAppMedia,
     persistOutbound = persistOutboundReply,
     typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
     nowFn = Date.now,
@@ -130,7 +134,11 @@ async function processTextEvents(
   const results = [];
 
   for (const event of events) {
-    if (!event || event.kind !== "text" || !event.message) {
+    if (
+      !event ||
+      (event.kind !== "text" && event.kind !== "image") ||
+      !event.message
+    ) {
       continue;
     }
 
@@ -174,10 +182,27 @@ async function processTextEvents(
 
     let generated;
     try {
-      generated = await generateReplyFn({
-        message: event.message,
-        history,
-      });
+      let image = null;
+      if (event.kind === "image") {
+        const media = await downloadMediaFn({ mediaId: event.mediaId });
+        if (!media || !media.ok || !media.dataUrl) {
+          generated = {
+            ok: false,
+            reply: IMAGE_UNREADABLE_REPLY,
+            error: (media && media.error) || "media_failed",
+          };
+        } else {
+          image = { dataUrl: media.dataUrl };
+        }
+      }
+
+      if (!generated) {
+        generated = await generateReplyFn({
+          message: event.message,
+          history,
+          image,
+        });
+      }
     } catch (_error) {
       logger.error("Groq request failed", { reason: "unhandled" });
       generated = {
@@ -288,4 +313,5 @@ module.exports = {
   sendGeneratedReplies,
   processTextEvents,
   TYPING_MIN_VISIBLE_MS,
+  IMAGE_UNREADABLE_REPLY,
 };

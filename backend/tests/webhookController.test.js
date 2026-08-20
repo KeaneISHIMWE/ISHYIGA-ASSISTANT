@@ -4,6 +4,7 @@ const {
   generateRepliesForInboundEvents,
   sendGeneratedReplies,
   processTextEvents,
+  IMAGE_UNREADABLE_REPLY,
 } = require("../src/controllers/webhookController");
 const { FALLBACK_REPLY } = require("../src/services/openaiService");
 
@@ -308,5 +309,83 @@ describe("processTextEvents", () => {
     assert.deepEqual(steps, ["typing"]);
     assert.equal(results[0].sent, false);
     assert.equal(results[0].skipped, "duplicate");
+  });
+
+  it("downloads a screenshot and replies from the vision model", async () => {
+    const steps = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "image",
+          messageId: "wamid.IMG1",
+          customerNumber: "250788000000",
+          message: "[Screenshot]",
+          mediaId: "MEDIA123",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async (event) => {
+          steps.push(`inbound:${event.kind}`);
+          return { ok: true, conversationId: "conv-1" };
+        },
+        loadHistory: async () => [],
+        downloadMediaFn: async ({ mediaId }) => {
+          steps.push(`download:${mediaId}`);
+          return { ok: true, dataUrl: "data:image/jpeg;base64,abc" };
+        },
+        generateReplyFn: async ({ image }) => {
+          steps.push(`vision:${Boolean(image && image.dataUrl)}`);
+          return { ok: true, reply: "I can see the invoice error." };
+        },
+        sendTextMessageFn: async () => {
+          steps.push("send");
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.deepEqual(steps, [
+      "inbound:image",
+      "download:MEDIA123",
+      "vision:true",
+      "send",
+    ]);
+    assert.equal(results[0].sent, true);
+    assert.equal(results[0].reply, "I can see the invoice error.");
+  });
+
+  it("asks the client to resend when the screenshot cannot be opened", async () => {
+    const results = await processTextEvents(
+      [
+        {
+          kind: "image",
+          messageId: "wamid.IMG1",
+          customerNumber: "250788000000",
+          message: "[Screenshot]",
+          mediaId: "MEDIA123",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        downloadMediaFn: async () => ({ ok: false, error: "api_error" }),
+        generateReplyFn: async () => {
+          throw new Error("should not generate");
+        },
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, IMAGE_UNREADABLE_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.equal(results[0].sent, true);
+    assert.equal(results[0].reply, IMAGE_UNREADABLE_REPLY);
   });
 });

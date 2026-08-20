@@ -5,6 +5,14 @@ const { safeEqual, sha256HmacHex } = require("../utils/crypto");
 const WHATSAPP_OBJECT = "whatsapp_business_account";
 const MESSAGES_FIELD = "messages";
 const SEND_TIMEOUT_MS = 20_000;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
 
 function verifyWebhook({ mode, token, challenge }, expectedToken) {
   if (mode !== "subscribe" || !token || !challenge) {
@@ -51,6 +59,56 @@ function extractTextFromMessage(message) {
   }
 
   return null;
+}
+
+function extractInboundContent(message) {
+  const text = extractTextFromMessage(message);
+  if (text) {
+    return {
+      kind: "text",
+      message: text,
+      mediaId: null,
+      mimeType: null,
+    };
+  }
+
+  if (message && message.type === "image" && message.image && message.image.id) {
+    const caption =
+      typeof message.image.caption === "string" ? message.image.caption.trim() : "";
+    return {
+      kind: "image",
+      message: caption || "[Screenshot]",
+      mediaId: message.image.id,
+      mimeType: message.image.mime_type || "image/jpeg",
+    };
+  }
+
+  if (
+    message &&
+    message.type === "document" &&
+    message.document &&
+    message.document.id &&
+    typeof message.document.mime_type === "string" &&
+    message.document.mime_type.startsWith("image/")
+  ) {
+    const caption =
+      typeof message.document.caption === "string"
+        ? message.document.caption.trim()
+        : "";
+    return {
+      kind: "image",
+      message: caption || message.document.filename || "[Screenshot]",
+      mediaId: message.document.id,
+      mimeType: message.document.mime_type,
+    };
+  }
+
+  return {
+    kind: "unsupported",
+    message: null,
+    mediaId: null,
+    mimeType: null,
+  };
 }
 
 function digitsOnly(value) {
@@ -131,16 +189,18 @@ function processIncomingMessage(payload) {
         }
 
         const messageType = message.type || "unknown";
-        const text = extractTextFromMessage(message);
+        const inbound = extractInboundContent(message);
 
         events.push({
-          kind: text ? "text" : "unsupported",
+          kind: inbound.kind,
           customerNumber: message.from,
           customerName: nameByWaId.get(message.from) || null,
           messageId: message.id,
           timestamp: message.timestamp || null,
           messageType,
-          message: text,
+          message: inbound.message,
+          mediaId: inbound.mediaId,
+          mimeType: inbound.mimeType,
         });
       }
     }
@@ -151,6 +211,107 @@ function processIncomingMessage(payload) {
 
 function getMessagesUrl(apiVersion, phoneNumberId) {
   return `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+}
+
+function normalizeImageMime(mimeType) {
+  if (mimeType === "image/jpg") {
+    return "image/jpeg";
+  }
+  return mimeType;
+}
+
+async function downloadWhatsAppMedia({
+  mediaId,
+  fetchFn = fetch,
+  accessToken = env.whatsappAccessToken,
+  apiVersion = env.whatsappApiVersion,
+} = {}) {
+  if (typeof mediaId !== "string" || !mediaId.trim()) {
+    logger.error("WhatsApp media download failed", { reason: "invalid_input" });
+    return { ok: false, error: "invalid_input" };
+  }
+
+  if (!accessToken) {
+    logger.error("WhatsApp media download failed", { reason: "not_configured" });
+    return { ok: false, error: "not_configured" };
+  }
+
+  const inboundMediaId = mediaId.trim();
+
+  try {
+    const metaResponse = await fetchFn(
+      `https://graph.facebook.com/${apiVersion}/${inboundMediaId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      }
+    );
+
+    if (!metaResponse.ok) {
+      logger.error("WhatsApp media download failed", {
+        reason: "api_error",
+        status: metaResponse.status,
+        step: "metadata",
+      });
+      return { ok: false, error: "api_error", status: metaResponse.status };
+    }
+
+    const meta = await metaResponse.json();
+    if (!meta || typeof meta.url !== "string" || !meta.url) {
+      logger.error("WhatsApp media download failed", { reason: "missing_url" });
+      return { ok: false, error: "api_error" };
+    }
+
+    const fileResponse = await fetchFn(meta.url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+
+    if (!fileResponse.ok) {
+      logger.error("WhatsApp media download failed", {
+        reason: "api_error",
+        status: fileResponse.status,
+        step: "file",
+      });
+      return { ok: false, error: "api_error", status: fileResponse.status };
+    }
+
+    const headerType =
+      fileResponse.headers && typeof fileResponse.headers.get === "function"
+        ? fileResponse.headers.get("content-type")
+        : "";
+    const rawMime = (meta.mime_type || headerType || "image/jpeg")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    const mimeType = normalizeImageMime(rawMime);
+
+    if (!ALLOWED_IMAGE_TYPES.has(rawMime) && !ALLOWED_IMAGE_TYPES.has(mimeType)) {
+      logger.error("WhatsApp media download failed", { reason: "unsupported_type" });
+      return { ok: false, error: "unsupported_type" };
+    }
+
+    const buffer = Buffer.from(await fileResponse.arrayBuffer());
+    if (buffer.length > MAX_IMAGE_BYTES) {
+      logger.error("WhatsApp media download failed", { reason: "too_large" });
+      return { ok: false, error: "too_large" };
+    }
+
+    logger.info("WhatsApp media downloaded", { mimeType, bytes: buffer.length });
+    return {
+      ok: true,
+      mimeType,
+      dataUrl: `data:${mimeType};base64,${buffer.toString("base64")}`,
+    };
+  } catch (error) {
+    const reason = classifyWhatsAppSendError(error, error.status);
+    logger.error("WhatsApp media download failed", { reason });
+    return { ok: false, error: reason };
+  }
 }
 
 function isRetryableSendResult(result) {
@@ -407,6 +568,8 @@ module.exports = {
   verifyWebhook,
   isValidSignature,
   processIncomingMessage,
+  extractInboundContent,
+  downloadWhatsAppMedia,
   sendTextMessage,
   markReadAndShowTyping,
   classifyWhatsAppSendError,
@@ -416,6 +579,7 @@ module.exports = {
   getVerifyToken,
   getAppSecret,
   SEND_TIMEOUT_MS,
+  MAX_IMAGE_BYTES,
   isOwnBusinessMessage,
   isStaleInbound,
 };

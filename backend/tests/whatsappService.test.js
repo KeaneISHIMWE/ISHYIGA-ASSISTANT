@@ -5,6 +5,7 @@ const {
   verifyWebhook,
   isValidSignature,
   processIncomingMessage,
+  downloadWhatsAppMedia,
   sendTextMessage,
   markReadAndShowTyping,
   classifyWhatsAppSendError,
@@ -143,6 +144,28 @@ describe("processIncomingMessage", () => {
     assert.equal(result.ok, true);
     assert.equal(result.events[0].kind, "unsupported");
     assert.equal(result.events[0].message, null);
+  });
+
+  it("extracts an image screenshot with caption", () => {
+    const payload = textPayload();
+    payload.entry[0].changes[0].value.messages[0] = {
+      from: "250788000000",
+      id: "wamid.IMG1",
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      type: "image",
+      image: {
+        id: "MEDIA123",
+        mime_type: "image/jpeg",
+        caption: "Invoice failed",
+      },
+    };
+
+    const result = processIncomingMessage(payload);
+    assert.equal(result.ok, true);
+    assert.equal(result.events[0].kind, "image");
+    assert.equal(result.events[0].message, "Invoice failed");
+    assert.equal(result.events[0].mediaId, "MEDIA123");
+    assert.equal(result.events[0].messageType, "image");
   });
 
   it("rejects a malformed payload", () => {
@@ -413,5 +436,55 @@ describe("markReadAndShowTyping", () => {
     assert.equal(payloads[0].typing_indicator.type, "text");
     assert.equal(payloads[1].status, "read");
     assert.equal(payloads[1].typing_indicator, undefined);
+  });
+});
+
+describe("downloadWhatsAppMedia", () => {
+  it("downloads media metadata then the image file", async () => {
+    const calls = [];
+    const result = await downloadWhatsAppMedia({
+      mediaId: "MEDIA123",
+      accessToken: "test-token",
+      apiVersion: "v23.0",
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        if (String(url).includes("/MEDIA123")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              url: "https://lookaside.fbsbx.com/whatsapp/media",
+              mime_type: "image/jpeg",
+            }),
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "image/jpeg" },
+          arrayBuffer: async () => Buffer.from("fake-image"),
+        };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mimeType, "image/jpeg");
+    assert.match(result.dataUrl, /^data:image\/jpeg;base64,/);
+    assert.equal(calls.length, 2);
+    assert.equal(
+      calls[0].url,
+      "https://graph.facebook.com/v23.0/MEDIA123"
+    );
+  });
+
+  it("returns a fallback when Meta is not configured", async () => {
+    const result = await downloadWhatsAppMedia({
+      mediaId: "MEDIA123",
+      accessToken: "",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "not_configured");
   });
 });

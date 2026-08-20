@@ -299,7 +299,8 @@ You represent Ishyiga Software, so every interaction should reflect professional
 You are chatting on WhatsApp. Write like a person texting support, not like a document.
 Do not use markdown headings, tables, or code fences.
 Keep each reply reasonably short. Ask one or two questions at a time.
-You can ask the client to send a screenshot in the chat.`;
+You can ask the client to send a screenshot in the chat.
+When a screenshot is attached, carefully read any visible error text, status, and screen labels. Use what you see. Do not invent error codes that are not in the image.`;
 
 function createClient(apiKey) {
   return new OpenAI({
@@ -328,11 +329,25 @@ function normalizeHistory(history) {
     }));
 }
 
-function buildInput(message, history) {
+function buildUserContent(message, image) {
+  if (!image || typeof image.dataUrl !== "string" || !image.dataUrl) {
+    return message;
+  }
+
+  return [
+    { type: "text", text: message },
+    {
+      type: "image_url",
+      image_url: { url: image.dataUrl },
+    },
+  ];
+}
+
+function buildInput(message, history, image) {
   return [
     { role: "system", content: SYSTEM_PROMPT },
     ...normalizeHistory(history),
-    { role: "user", content: message },
+    { role: "user", content: buildUserContent(message, image) },
   ];
 }
 
@@ -376,8 +391,9 @@ function classifyOpenAIError(error) {
   return "api_error";
 }
 
-async function generateReply({ message, history = [], client } = {}) {
-  if (typeof message !== "string" || !message.trim()) {
+async function generateReply({ message, history = [], image, client } = {}) {
+  const hasImage = Boolean(image && image.dataUrl);
+  if (!hasImage && (typeof message !== "string" || !message.trim())) {
     return {
       ok: false,
       reply: FALLBACK_REPLY,
@@ -386,7 +402,7 @@ async function generateReply({ message, history = [], client } = {}) {
   }
 
   const apiKey = env.groqApiKey;
-  const model = env.groqModel;
+  const model = hasImage ? env.groqVisionModel : env.groqModel;
   const groq = client || (apiKey ? createClient(apiKey) : null);
 
   if (!groq) {
@@ -398,19 +414,23 @@ async function generateReply({ message, history = [], client } = {}) {
     };
   }
 
-  const trimmedMessage = message.trim();
+  const trimmedMessage =
+    typeof message === "string" && message.trim()
+      ? message.trim()
+      : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
 
   logger.info("Groq request started", {
     model,
     historyCount: safeHistory.length,
+    hasImage,
   });
 
   try {
     const response = await groq.chat.completions.create(
       {
         model,
-        messages: buildInput(trimmedMessage, safeHistory),
+        messages: buildInput(trimmedMessage, safeHistory, hasImage ? image : null),
       },
       { timeout: REQUEST_TIMEOUT_MS }
     );

@@ -28,6 +28,7 @@ const env = {
   whatsappApiVersion: readEnv("WHATSAPP_API_VERSION", "v23.0"),
   groqApiKey: readEnv("GROQ_API_KEY", ""),
   groqModel: readEnv("GROQ_MODEL", "openai/gpt-oss-20b"),
+  groqVisionModel: readEnv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b"),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {

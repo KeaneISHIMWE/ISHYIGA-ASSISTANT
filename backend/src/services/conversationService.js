@@ -58,7 +58,12 @@ async function persistInboundEvent(
     createMessage = messageModel.createIfNew,
   } = {}
 ) {
-  if (!event || event.kind !== "text" || !event.customerNumber || !event.message) {
+  if (
+    !event ||
+    (event.kind !== "text" && event.kind !== "image") ||
+    !event.customerNumber ||
+    !event.message
+  ) {
     return { ok: false, error: "invalid_event" };
   }
 

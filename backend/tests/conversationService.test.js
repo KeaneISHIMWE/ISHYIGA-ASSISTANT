@@ -43,6 +43,31 @@ describe("persistInboundEvent", () => {
     assert.equal(calls[2][1].message, "Hello");
   });
 
+  it("persists a screenshot as an image inbound event", async () => {
+    const calls = [];
+    const result = await persistInboundEvent(
+      {
+        kind: "image",
+        customerNumber: "250788000000",
+        messageId: "wamid.IMG1",
+        message: "[Screenshot]",
+        messageType: "image",
+      },
+      {
+        findOrCreateCustomer: async () => ({ id: "cust-1" }),
+        findOrCreateOpenConversation: async () => ({ id: "conv-1" }),
+        createMessage: async (input) => {
+          calls.push(input);
+          return { id: "msg-1", created: true };
+        },
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(calls[0].messageType, "image");
+    assert.equal(calls[0].message, "[Screenshot]");
+  });
+
   it("marks an already stored inbound message as a duplicate", async () => {
     const result = await persistInboundEvent(
       {

@@ -56,6 +56,18 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /RRA/i);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
   });
+
+  it("attaches a screenshot as vision content", () => {
+    const input = buildInput("Invoice failed", [], {
+      dataUrl: "data:image/jpeg;base64,abc",
+    });
+
+    assert.equal(input[1].role, "user");
+    assert.equal(input[1].content[0].type, "text");
+    assert.equal(input[1].content[0].text, "Invoice failed");
+    assert.equal(input[1].content[1].type, "image_url");
+    assert.equal(input[1].content[1].image_url.url, "data:image/jpeg;base64,abc");
+  });
 });
 
 describe("classifyOpenAIError", () => {
@@ -150,6 +162,23 @@ describe("generateReply", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "insufficient_quota");
+  });
+
+  it("sends screenshots to the vision model", async () => {
+    let usedModel = null;
+    const result = await generateReply({
+      message: "[Screenshot]",
+      image: { dataUrl: "data:image/jpeg;base64,abc" },
+      client: fakeClient(async (payload) => {
+        usedModel = payload.model;
+        assert.equal(payload.messages[1].content[1].type, "image_url");
+        return completion("I can see an invoice error on the screen.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.reply, /invoice error/);
+    assert.equal(usedModel, "qwen/qwen3.6-27b");
   });
 
   it("rejects a missing message", async () => {
