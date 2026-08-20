@@ -49,6 +49,13 @@ describe("buildInput", () => {
     assert.equal(input.length, 2);
     assert.equal(input[1].content, "Hello");
   });
+
+  it("uses the Ishyiga Software support prompt", () => {
+    assert.match(SYSTEM_PROMPT, /Ishyiga Software/i);
+    assert.match(SYSTEM_PROMPT, /Customer Support Assistant/i);
+    assert.match(SYSTEM_PROMPT, /RRA/i);
+    assert.match(SYSTEM_PROMPT, /WhatsApp/i);
+  });
 });
 
 describe("classifyOpenAIError", () => {

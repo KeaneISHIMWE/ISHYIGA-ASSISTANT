@@ -96,6 +96,7 @@ async function persistInboundEvent(
 
     return {
       ok: true,
+      duplicate: inbound ? inbound.created === false : false,
       customerId: customer.id,
       conversationId: conversation.id,
       messageId: inbound && inbound.id ? inbound.id : null,

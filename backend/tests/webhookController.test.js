@@ -138,6 +138,7 @@ describe("processTextEvents", () => {
           steps.push(`groq:${message}:${history.length}`);
           return { ok: true, reply: "We can help." };
         },
+        typingMinVisibleMs: 0,
         markReadAndShowTypingFn: async ({ messageId }) => {
           steps.push(`typing:${messageId}`);
           return { ok: true };
@@ -178,6 +179,7 @@ describe("processTextEvents", () => {
         },
       ],
       {
+        typingMinVisibleMs: 0,
         markReadAndShowTypingFn: async () => ({ ok: true }),
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
@@ -205,6 +207,7 @@ describe("processTextEvents", () => {
         },
       ],
       {
+        typingMinVisibleMs: 0,
         markReadAndShowTypingFn: async () => {
           throw new Error("network");
         },
@@ -218,5 +221,92 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].sent, true);
     assert.equal(results[0].reply, "We can help.");
+  });
+
+  it("holds the reply until typing has been visible", async () => {
+    let now = 1_000;
+    const sleeps = [];
+    const steps = [];
+
+    await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.1",
+          customerNumber: "250788000000",
+          message: "Hello",
+        },
+      ],
+      {
+        typingMinVisibleMs: 2_000,
+        nowFn: () => now,
+        sleepFn: async (ms) => {
+          sleeps.push(ms);
+          now += ms;
+        },
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        generateReplyFn: async () => {
+          now += 200;
+          steps.push("groq");
+          return { ok: true, reply: "We can help." };
+        },
+        sendTextMessageFn: async () => {
+          steps.push("send");
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.deepEqual(sleeps, [1_800]);
+    assert.deepEqual(steps, ["groq", "send"]);
+  });
+
+  it("does not reply to a duplicate inbound message", async () => {
+    const steps = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.1",
+          customerNumber: "250788000000",
+          message: "Hello",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => {
+          steps.push("typing");
+          return { ok: true };
+        },
+        persistInbound: async () => ({
+          ok: true,
+          duplicate: true,
+          conversationId: "conv-1",
+        }),
+        loadHistory: async () => {
+          steps.push("history");
+          return [];
+        },
+        generateReplyFn: async () => {
+          steps.push("groq");
+          return { ok: true, reply: "We can help." };
+        },
+        sendTextMessageFn: async () => {
+          steps.push("send");
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => {
+          steps.push("outbound");
+          return { ok: true };
+        },
+      }
+    );
+
+    assert.deepEqual(steps, ["typing"]);
+    assert.equal(results[0].sent, false);
+    assert.equal(results[0].skipped, "duplicate");
   });
 });

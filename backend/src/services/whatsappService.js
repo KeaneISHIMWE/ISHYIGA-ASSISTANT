@@ -53,6 +53,25 @@ function extractTextFromMessage(message) {
   return null;
 }
 
+function digitsOnly(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function isOwnBusinessMessage(message, metadata) {
+  const from = digitsOnly(message && message.from);
+  const display = digitsOnly(metadata && metadata.display_phone_number);
+  return Boolean(from && display && from === display);
+}
+
+function isStaleInbound(timestamp, nowSec = Math.floor(Date.now() / 1000)) {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return false;
+  }
+
+  return nowSec - ts > 10 * 60;
+}
+
 function processIncomingMessage(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { ok: false, statusCode: 400, error: "Malformed webhook payload" };
@@ -98,6 +117,16 @@ function processIncomingMessage(payload) {
 
       for (const message of inboundMessages) {
         if (!message || !message.from || !message.id) {
+          continue;
+        }
+
+        if (isOwnBusinessMessage(message, change.value.metadata)) {
+          logger.info("WhatsApp echo ignored", { messageId: message.id });
+          continue;
+        }
+
+        if (isStaleInbound(message.timestamp)) {
+          logger.info("WhatsApp stale message ignored", { messageId: message.id });
           continue;
         }
 
@@ -245,6 +274,74 @@ async function sendTextMessage({
   return postOnce(2);
 }
 
+async function readGraphError(response) {
+  try {
+    const data = await response.json();
+    const err = data && data.error ? data.error : {};
+    return {
+      graphCode: err.code || null,
+      graphMessage:
+        typeof err.message === "string" ? err.message.slice(0, 180) : null,
+    };
+  } catch (_error) {
+    return {};
+  }
+}
+
+async function postReadStatus({
+  messageId,
+  showTyping,
+  fetchFn,
+  accessToken,
+  phoneNumberId,
+  apiVersion,
+}) {
+  const url = getMessagesUrl(apiVersion, phoneNumberId);
+  const payload = {
+    messaging_product: "whatsapp",
+    status: "read",
+    message_id: messageId,
+  };
+
+  if (showTyping) {
+    payload.typing_indicator = { type: "text" };
+  }
+
+  try {
+    const response = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const reason = classifyWhatsAppSendError(null, response.status);
+      const graphError = await readGraphError(response);
+      logger.error("WhatsApp read/typing failed", {
+        reason,
+        status: response.status,
+        showTyping,
+        ...graphError,
+      });
+      return { ok: false, error: reason, status: response.status, ...graphError };
+    }
+
+    logger.info(
+      showTyping ? "WhatsApp read/typing shown" : "WhatsApp message marked read",
+      { messageId }
+    );
+    return { ok: true, typing: showTyping };
+  } catch (error) {
+    const reason = classifyWhatsAppSendError(error, error.status);
+    logger.error("WhatsApp read/typing failed", { reason, showTyping });
+    return { ok: false, error: reason };
+  }
+}
+
 async function markReadAndShowTyping({
   messageId,
   fetchFn = fetch,
@@ -263,42 +360,27 @@ async function markReadAndShowTyping({
   }
 
   const inboundId = messageId.trim();
-  const url = getMessagesUrl(apiVersion, phoneNumberId);
+  const withTyping = await postReadStatus({
+    messageId: inboundId,
+    showTyping: true,
+    fetchFn,
+    accessToken,
+    phoneNumberId,
+    apiVersion,
+  });
 
-  try {
-    const response = await fetchFn(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        status: "read",
-        message_id: inboundId,
-        typing_indicator: {
-          type: "text",
-        },
-      }),
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      const reason = classifyWhatsAppSendError(null, response.status);
-      logger.error("WhatsApp read/typing failed", {
-        reason,
-        status: response.status,
-      });
-      return { ok: false, error: reason, status: response.status };
-    }
-
-    logger.info("WhatsApp read/typing shown", { messageId: inboundId });
-    return { ok: true };
-  } catch (error) {
-    const reason = classifyWhatsAppSendError(error, error.status);
-    logger.error("WhatsApp read/typing failed", { reason });
-    return { ok: false, error: reason };
+  if (withTyping.ok || withTyping.status !== 400) {
+    return withTyping;
   }
+
+  return postReadStatus({
+    messageId: inboundId,
+    showTyping: false,
+    fetchFn,
+    accessToken,
+    phoneNumberId,
+    apiVersion,
+  });
 }
 
 function logProcessedEvents(events) {
@@ -334,4 +416,6 @@ module.exports = {
   getVerifyToken,
   getAppSecret,
   SEND_TIMEOUT_MS,
+  isOwnBusinessMessage,
+  isStaleInbound,
 };

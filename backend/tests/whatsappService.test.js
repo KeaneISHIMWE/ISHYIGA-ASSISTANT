@@ -13,7 +13,13 @@ const {
 
 const VERIFY_TOKEN = "test-verify-token";
 
-function textPayload({ from = "250788000000", body = "Hello", type = "text" } = {}) {
+function textPayload({
+  from = "250788000000",
+  body = "Hello",
+  type = "text",
+  timestamp = String(Math.floor(Date.now() / 1000)),
+  displayPhoneNumber,
+} = {}) {
   return {
     object: "whatsapp_business_account",
     entry: [
@@ -24,6 +30,9 @@ function textPayload({ from = "250788000000", body = "Hello", type = "text" } = 
             field: "messages",
             value: {
               messaging_product: "whatsapp",
+              metadata: displayPhoneNumber
+                ? { display_phone_number: displayPhoneNumber }
+                : undefined,
               contacts: [
                 {
                   profile: { name: "Alex" },
@@ -34,7 +43,7 @@ function textPayload({ from = "250788000000", body = "Hello", type = "text" } = 
                 {
                   from,
                   id: "wamid.TEST123",
-                  timestamp: "1710000000",
+                  timestamp,
                   type,
                   text: type === "text" ? { body } : undefined,
                 },
@@ -147,6 +156,27 @@ describe("processIncomingMessage", () => {
     assert.equal(result.ok, false);
     assert.equal(result.statusCode, 404);
   });
+
+  it("ignores echoes from the business phone number", () => {
+    const result = processIncomingMessage(
+      textPayload({
+        from: "15551234567",
+        displayPhoneNumber: "+1 555 123 4567",
+      })
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.events.length, 0);
+  });
+
+  it("ignores stale inbound messages", () => {
+    const result = processIncomingMessage(
+      textPayload({ timestamp: "1710000000" })
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.events.length, 0);
+  });
 });
 
 describe("classifyWhatsAppSendError", () => {
@@ -185,7 +215,7 @@ describe("sendTextMessage", () => {
       body: "We can help with the company's services.",
       accessToken: "test-token",
       phoneNumberId: "123456789",
-      apiVersion: "v21.0",
+      apiVersion: "v23.0",
       fetchFn: async (url, options) => {
         calls.push({ url, options });
         return {
@@ -201,7 +231,7 @@ describe("sendTextMessage", () => {
     assert.equal(calls.length, 1);
     assert.equal(
       calls[0].url,
-      "https://graph.facebook.com/v21.0/123456789/messages"
+      "https://graph.facebook.com/v23.0/123456789/messages"
     );
     assert.equal(calls[0].options.method, "POST");
 
@@ -304,7 +334,7 @@ describe("markReadAndShowTyping", () => {
       messageId: "wamid.TEST123",
       accessToken: "test-token",
       phoneNumberId: "123456789",
-      apiVersion: "v21.0",
+      apiVersion: "v23.0",
       fetchFn: async (url, options) => {
         calls.push({ url, options });
         return { ok: true, status: 200, json: async () => ({ success: true }) };
@@ -312,10 +342,11 @@ describe("markReadAndShowTyping", () => {
     });
 
     assert.equal(result.ok, true);
+    assert.equal(result.typing, true);
     assert.equal(calls.length, 1);
     assert.equal(
       calls[0].url,
-      "https://graph.facebook.com/v21.0/123456789/messages"
+      "https://graph.facebook.com/v23.0/123456789/messages"
     );
 
     const payload = JSON.parse(calls[0].options.body);
@@ -350,5 +381,37 @@ describe("markReadAndShowTyping", () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.error, "api_error");
+  });
+
+  it("falls back to mark-as-read when typing is rejected", async () => {
+    const payloads = [];
+    const result = await markReadAndShowTyping({
+      messageId: "wamid.TEST123",
+      accessToken: "test-token",
+      phoneNumberId: "123456789",
+      apiVersion: "v23.0",
+      fetchFn: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        payloads.push(body);
+        if (body.typing_indicator) {
+          return {
+            ok: false,
+            status: 400,
+            json: async () => ({
+              error: { code: 100, message: "Param typing_indicator is not available." },
+            }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.typing, false);
+    assert.equal(payloads.length, 2);
+    assert.equal(payloads[0].status, "read");
+    assert.equal(payloads[0].typing_indicator.type, "text");
+    assert.equal(payloads[1].status, "read");
+    assert.equal(payloads[1].typing_indicator, undefined);
   });
 });

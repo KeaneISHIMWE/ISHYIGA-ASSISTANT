@@ -38,8 +38,29 @@ describe("persistInboundEvent", () => {
     assert.equal(result.ok, true);
     assert.equal(result.customerId, "cust-1");
     assert.equal(result.conversationId, "conv-1");
+    assert.equal(result.duplicate, false);
     assert.equal(calls[2][1].senderType, "customer");
     assert.equal(calls[2][1].message, "Hello");
+  });
+
+  it("marks an already stored inbound message as a duplicate", async () => {
+    const result = await persistInboundEvent(
+      {
+        kind: "text",
+        customerNumber: "250788000000",
+        messageId: "wamid.1",
+        message: "Hello",
+      },
+      {
+        findOrCreateCustomer: async () => ({ id: "cust-1" }),
+        findOrCreateOpenConversation: async () => ({ id: "conv-1" }),
+        createMessage: async () => ({ id: "msg-1", created: false }),
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.duplicate, true);
+    assert.equal(result.conversationId, "conv-1");
   });
 
   it("returns persist_failed without throwing when storage fails", async () => {

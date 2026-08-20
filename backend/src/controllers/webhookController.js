@@ -17,6 +17,21 @@ const {
   getAppSecret,
 } = require("../services/whatsappService");
 
+const TYPING_MIN_VISIBLE_MS = 2_000;
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForTypingWindow(startedAt, minMs, nowFn, sleepFn) {
+  const remaining = minMs - (nowFn() - startedAt);
+  if (remaining > 0) {
+    await sleepFn(remaining);
+  }
+}
+
 async function generateRepliesForInboundEvents(
   events,
   generateReplyFn = generateReply
@@ -107,6 +122,9 @@ async function processTextEvents(
     sendTextMessageFn = sendTextMessage,
     markReadAndShowTypingFn = markReadAndShowTyping,
     persistOutbound = persistOutboundReply,
+    typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
+    nowFn = Date.now,
+    sleepFn = sleep,
   } = {}
 ) {
   const results = [];
@@ -116,6 +134,8 @@ async function processTextEvents(
       continue;
     }
 
+    const typingStartedAt = nowFn();
+
     try {
       await markReadAndShowTypingFn({ messageId: event.messageId });
     } catch (_error) {
@@ -123,6 +143,22 @@ async function processTextEvents(
     }
 
     const inbound = await persistInbound(event);
+
+    if (inbound.duplicate) {
+      logger.info("Duplicate WhatsApp message skipped", {
+        messageId: event.messageId,
+        customer: maskPhoneNumber(event.customerNumber),
+      });
+      results.push({
+        messageId: event.messageId,
+        conversationId: inbound.conversationId || null,
+        persistedInbound: true,
+        reply: null,
+        sent: false,
+        skipped: "duplicate",
+      });
+      continue;
+    }
 
     let history = [];
     if (inbound.ok && inbound.conversationId) {
@@ -155,6 +191,8 @@ async function processTextEvents(
       ok: generated.ok,
       error: generated.error || null,
     });
+
+    await waitForTypingWindow(typingStartedAt, typingMinVisibleMs, nowFn, sleepFn);
 
     let sent;
     try {
@@ -249,4 +287,5 @@ module.exports = {
   generateRepliesForInboundEvents,
   sendGeneratedReplies,
   processTextEvents,
+  TYPING_MIN_VISIBLE_MS,
 };

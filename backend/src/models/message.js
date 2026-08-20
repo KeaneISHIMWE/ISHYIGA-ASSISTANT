@@ -101,13 +101,15 @@ async function findByWhatsappMessageId(whatsappMessageId) {
 
 async function createIfNew(input) {
   try {
-    return await create(input);
+    const row = await create(input);
+    return row ? { ...row, created: true } : { created: true };
   } catch (error) {
     if (!isUniqueViolation(error) || !input.whatsappMessageId) {
       throw error;
     }
 
-    return findByWhatsappMessageId(input.whatsappMessageId);
+    const row = await findByWhatsappMessageId(input.whatsappMessageId);
+    return row ? { ...row, created: false } : { created: false };
   }
 }
 
