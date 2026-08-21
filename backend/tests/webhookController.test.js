@@ -388,4 +388,37 @@ describe("processTextEvents", () => {
     assert.equal(results[0].sent, true);
     assert.equal(results[0].reply, IMAGE_UNREADABLE_REPLY);
   });
+
+  it("replies AIMABLE when the special contact sends kimenyi", async () => {
+    const steps = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.special",
+          customerNumber: "250788880066",
+          message: "KIMENYI",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        generateReplyFn: async () => {
+          steps.push("groq");
+          throw new Error("should not generate");
+        },
+        sendTextMessageFn: async ({ to, body }) => {
+          steps.push(`send:${to}:${body}`);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.deepEqual(steps, ["send:250788880066:AIMABLE"]);
+    assert.equal(results[0].reply, "AIMABLE");
+    assert.equal(results[0].sent, true);
+  });
 });

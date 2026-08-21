@@ -55,6 +55,8 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /Customer Support Assistant/i);
     assert.match(SYSTEM_PROMPT, /RRA/i);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
+    assert.match(SYSTEM_PROMPT, /AIMABLE/);
+    assert.match(SYSTEM_PROMPT, /kimenyi/i);
   });
 
   it("attaches a screenshot as vision content", () => {

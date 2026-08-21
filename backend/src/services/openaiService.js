@@ -300,7 +300,17 @@ You are chatting on WhatsApp. Write like a person texting support, not like a do
 Do not use markdown headings, tables, or code fences.
 Keep each reply reasonably short. Ask one or two questions at a time.
 You can ask the client to send a screenshot in the chat.
-When a screenshot is attached, carefully read any visible error text, status, and screen labels. Use what you see. Do not invent error codes that are not in the image.`;
+When a screenshot is attached, carefully read any visible error text, status, and screen labels. Use what you see. Do not invent error codes that are not in the image.
+
+## 26. CONTACT-SPECIFIC RESPONSE RULE
+
+When a WhatsApp message is received from +250788880066 and the message contains the word "kimenyi" (case-insensitive), respond with exactly AIMABLE.
+
+Do not add any other words, punctuation, emojis, or explanation.
+
+This contact-specific rule takes priority over normal conversational behavior for that contact and trigger only.
+
+If any other contact sends "kimenyi", do not apply this special rule. Respond according to the normal support instructions.`;
 
 function createClient(apiKey) {
   return new OpenAI({

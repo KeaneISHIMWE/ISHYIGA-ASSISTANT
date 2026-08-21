@@ -1,5 +1,6 @@
 const { logger } = require("../utils/logger");
 const { generateReply, FALLBACK_REPLY } = require("../services/openaiService");
+const { matchSpecialContactReply } = require("../services/contactRules");
 const {
   persistInboundEvent,
   persistOutboundReply,
@@ -181,27 +182,36 @@ async function processTextEvents(
     }
 
     let generated;
-    try {
-      let image = null;
-      if (event.kind === "image") {
-        const media = await downloadMediaFn({ mediaId: event.mediaId });
-        if (!media || !media.ok || !media.dataUrl) {
-          generated = {
-            ok: false,
-            reply: IMAGE_UNREADABLE_REPLY,
-            error: (media && media.error) || "media_failed",
-          };
-        } else {
-          image = { dataUrl: media.dataUrl };
-        }
-      }
+    const specialReply = matchSpecialContactReply({
+      customerNumber: event.customerNumber,
+      message: event.message,
+    });
 
-      if (!generated) {
-        generated = await generateReplyFn({
-          message: event.message,
-          history,
-          image,
-        });
+    try {
+      if (specialReply) {
+        generated = { ok: true, reply: specialReply, error: null };
+      } else {
+        let image = null;
+        if (event.kind === "image") {
+          const media = await downloadMediaFn({ mediaId: event.mediaId });
+          if (!media || !media.ok || !media.dataUrl) {
+            generated = {
+              ok: false,
+              reply: IMAGE_UNREADABLE_REPLY,
+              error: (media && media.error) || "media_failed",
+            };
+          } else {
+            image = { dataUrl: media.dataUrl };
+          }
+        }
+
+        if (!generated) {
+          generated = await generateReplyFn({
+            message: event.message,
+            history,
+            image,
+          });
+        }
       }
     } catch (_error) {
       logger.error("Groq request failed", { reason: "unhandled" });
