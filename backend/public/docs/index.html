@@ -97,16 +97,26 @@
     <section class="card">
       <h2>Base URL</h2>
       <pre id="baseUrl"></pre>
-      <p class="muted">No API key. All conversation endpoints are <code>GET</code> and return JSON. CORS is open for these read endpoints so another website or app can call them.</p>
+      <p class="muted">These endpoints are protected. Send the secret as <code>Authorization: Bearer &lt;CONVERSATIONS_API_KEY&gt;</code>. Traffic on Railway is HTTPS, so the key and chat data are encrypted in transit. Without the key, the API returns 401 and chats stay hidden.</p>
       <p>Machine-readable spec: <a id="openapiLink" href="/api/openapi.json">/api/openapi.json</a></p>
+    </section>
+
+    <section class="card">
+      <h2>API key</h2>
+      <p>Ask Ishyiga for <code>CONVERSATIONS_API_KEY</code>. Put it here to try the live API, or send it in the request header.</p>
+      <div class="row">
+        <input id="apiKey" type="password" placeholder="CONVERSATIONS_API_KEY" autocomplete="off" />
+      </div>
+      <pre>Authorization: Bearer YOUR_KEY</pre>
+      <p class="muted">You can also send <code>X-Api-Key: YOUR_KEY</code>. Do not put the key in the URL.</p>
     </section>
 
     <section class="card">
       <h2>How to fetch chats</h2>
       <ol>
-        <li>Call <code>GET /api/conversations</code> to get the inbox.</li>
+        <li>Call <code>GET /api/conversations</code> with the API key to get the inbox.</li>
         <li>Copy a conversation <code>id</code>.</li>
-        <li>Call <code>GET /api/conversations/{id}</code> to get every message in that chat.</li>
+        <li>Call <code>GET /api/conversations/{id}</code> with the same key to get every message in that chat.</li>
       </ol>
       <p>In the message list, <code>sender: "customer"</code> is the client. <code>sender: "assistant"</code> is the AI reply.</p>
     </section>
@@ -183,6 +193,7 @@
       <h2>Errors</h2>
       <table>
         <tr><th>Status</th><th>Body</th></tr>
+        <tr><td>401</td><td><code>{"error":"Unauthorized. Send Authorization: Bearer &lt;CONVERSATIONS_API_KEY&gt;."}</code></td></tr>
         <tr><td>400</td><td><code>{"error":"Invalid conversation id"}</code></td></tr>
         <tr><td>404</td><td><code>{"error":"Conversation not found"}</code></td></tr>
       </table>
@@ -193,6 +204,15 @@
     const base = window.location.origin;
     document.getElementById("baseUrl").textContent = base;
     document.getElementById("openapiLink").href = `${base}/api/openapi.json`;
+
+    function getApiKey() {
+      return document.getElementById("apiKey").value.trim();
+    }
+
+    function authHeader() {
+      const key = getApiKey() || "YOUR_KEY";
+      return `Authorization: Bearer ${key}`;
+    }
 
     function listUrl() {
       const phone = document.getElementById("phone").value.trim();
@@ -207,13 +227,14 @@
     }
 
     function renderSnippets() {
-      document.getElementById("curlList").textContent = `curl "${listUrl()}"`;
+      const header = authHeader();
+      document.getElementById("curlList").textContent = `curl -H "${header}" "${listUrl()}"`;
       document.getElementById("jsList").textContent =
-        `const res = await fetch("${listUrl()}");\nconst data = await res.json();\nconst chats = data.conversations;`;
-      document.getElementById("curlOne").textContent = `curl "${oneUrl()}"`;
+        `const res = await fetch("${listUrl()}", {\n  headers: { "${header.split(": ")[0]}": "${header.split(": ")[1]}" }\n});\nconst data = await res.json();\nconst chats = data.conversations;`;
+      document.getElementById("curlOne").textContent = `curl -H "${header}" "${oneUrl()}"`;
       document.getElementById("jsOne").textContent =
-        `const res = await fetch("${oneUrl()}");\nconst data = await res.json();\nconst messages = data.conversation.messages;`;
-      document.getElementById("curlStats").textContent = `curl "${base}/api/dashboard"`;
+        `const res = await fetch("${oneUrl()}", {\n  headers: { Authorization: "Bearer YOUR_KEY" }\n});\nconst data = await res.json();\nconst messages = data.conversation.messages;`;
+      document.getElementById("curlStats").textContent = `curl -H "${header}" "${base}/api/dashboard"`;
     }
 
     async function show(id, url) {
@@ -221,7 +242,11 @@
       node.className = "";
       node.textContent = "Loading…";
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          headers: getApiKey()
+            ? { Authorization: `Bearer ${getApiKey()}` }
+            : {},
+        });
         const data = await res.json();
         node.textContent = JSON.stringify(data, null, 2);
         node.className = res.ok ? "ok" : "err";
@@ -235,6 +260,7 @@
 
     document.getElementById("phone").addEventListener("input", renderSnippets);
     document.getElementById("conversationId").addEventListener("input", renderSnippets);
+    document.getElementById("apiKey").addEventListener("input", renderSnippets);
 
     document.querySelector('[data-try="list"]').addEventListener("click", async () => {
       const data = await show("outList", listUrl());

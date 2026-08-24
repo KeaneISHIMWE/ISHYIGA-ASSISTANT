@@ -32,6 +32,7 @@ const env = {
   clientsApiUrl: readEnv("CLIENTS_API_URL", ""),
   clientsApiKey: readEnv("CLIENTS_API_KEY", ""),
   clientsApiTimeoutMs: Number(readEnv("CLIENTS_API_TIMEOUT_MS", "8000")),
+  conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {

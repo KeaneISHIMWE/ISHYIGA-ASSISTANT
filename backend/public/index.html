@@ -258,6 +258,35 @@
       .details { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
     }
 
+    #gate {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 19, 31, 0.92);
+      z-index: 20;
+      align-items: center;
+      justify-content: center;
+    }
+    #gate.open { display: flex; }
+    #gate form {
+      width: min(420px, 92vw);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px;
+    }
+    #gate input { width: 100%; margin: 10px 0; }
+    #gate button {
+      background: var(--gold);
+      color: #1a1406;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #gateError { color: #f0a0a0; min-height: 1.2em; }
+
     @media (max-width: 720px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
       .workspace { grid-template-columns: 1fr; }
@@ -265,6 +294,15 @@
   </style>
 </head>
 <body>
+  <div id="gate">
+    <form id="gateForm">
+      <h2 style="margin:0 0 8px">Conversations are protected</h2>
+      <p style="color:var(--muted);margin:0 0 8px">Enter the conversation API key. Only people with this key can load chats.</p>
+      <input id="apiKeyInput" type="password" autocomplete="current-password" placeholder="CONVERSATIONS_API_KEY" />
+      <button type="submit">Unlock</button>
+      <p id="gateError"></p>
+    </form>
+  </div>
   <div class="app">
     <header>
       <div>
@@ -302,6 +340,7 @@
   </div>
 
   <script>
+    const KEY_STORAGE = "ishyiga.conversationsApiKey";
     const state = {
       conversations: [],
       selectedId: null,
@@ -309,6 +348,28 @@
       conversation: null,
       query: "",
     };
+
+    function getApiKey() {
+      return sessionStorage.getItem(KEY_STORAGE) || "";
+    }
+
+    function apiFetch(url) {
+      return fetch(url, {
+        headers: {
+          Authorization: `Bearer ${getApiKey()}`,
+        },
+      });
+    }
+
+    function showGate(message) {
+      document.getElementById("gate").classList.add("open");
+      document.getElementById("gateError").textContent = message || "";
+    }
+
+    function hideGate() {
+      document.getElementById("gate").classList.remove("open");
+      document.getElementById("gateError").textContent = "";
+    }
 
     const flowSteps = [
       ["1", "Client writes", "WhatsApp message"],
@@ -511,7 +572,11 @@
       state.selectedId = id;
       state.selectedMessageId = null;
       renderInbox();
-      const response = await fetch(`/api/conversations/${id}`);
+      const response = await apiFetch(`/api/conversations/${id}`);
+      if (response.status === 401 || response.status === 503) {
+        showGate("The API key was rejected.");
+        return;
+      }
       const data = await response.json();
       state.conversation = data.conversation || null;
       if (state.conversation && state.conversation.messages.length) {
@@ -523,15 +588,21 @@
 
     async function refresh() {
       const keepMessageId = state.selectedMessageId;
-      const [dashboard, conversations] = await Promise.all([
-        fetch("/api/dashboard").then((res) => res.json()),
-        fetch("/api/conversations").then((res) => res.json()),
+      const [dashboardRes, conversationsRes] = await Promise.all([
+        apiFetch("/api/dashboard"),
+        apiFetch("/api/conversations"),
       ]);
+      if (dashboardRes.status === 401 || dashboardRes.status === 503) {
+        showGate("Enter the conversation API key to load chats.");
+        throw new Error("unauthorized");
+      }
+      const dashboard = await dashboardRes.json();
+      const conversations = await conversationsRes.json();
       renderStats(dashboard.stats);
       state.conversations = conversations.conversations || [];
       renderInbox();
       if (state.selectedId) {
-        const response = await fetch(`/api/conversations/${state.selectedId}`);
+        const response = await apiFetch(`/api/conversations/${state.selectedId}`);
         const data = await response.json();
         state.conversation = data.conversation || null;
         const ids = (state.conversation && state.conversation.messages || []).map((item) => item.id);
@@ -547,12 +618,35 @@
       renderInbox();
     });
 
+    document.getElementById("gateForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const key = document.getElementById("apiKeyInput").value.trim();
+      if (!key) {
+        showGate("The API key is required.");
+        return;
+      }
+      sessionStorage.setItem(KEY_STORAGE, key);
+      try {
+        await refresh();
+        hideGate();
+      } catch (_error) {
+        document.getElementById("updated").textContent = "Could not load dashboard";
+      }
+    });
+
     renderFlow();
     renderDetails();
-    refresh().catch(() => {
-      document.getElementById("updated").textContent = "Could not load dashboard";
-    });
+    if (!getApiKey()) {
+      showGate("Enter the conversation API key to load chats.");
+    } else {
+      refresh().catch(() => {
+        document.getElementById("updated").textContent = "Could not load dashboard";
+      });
+    }
     setInterval(() => {
+      if (!getApiKey() || document.getElementById("gate").classList.contains("open")) {
+        return;
+      }
       refresh().catch(() => {});
     }, 5000);
   </script>

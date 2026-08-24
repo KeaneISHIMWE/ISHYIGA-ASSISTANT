@@ -27,6 +27,7 @@ async function getHealth(_req, res) {
         env.whatsappAccessToken && env.whatsappPhoneNumberId
       ),
       clientsApiConfigured: Boolean(env.clientsApiUrl),
+      conversationsApiProtected: Boolean(env.conversationsApiKey),
     },
   });
 }

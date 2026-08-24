@@ -13,9 +13,24 @@ function getOpenApi(req, res) {
       title: "Ishyiga Assistant Conversation API",
       version: "1.0.0",
       description:
-        "Read WhatsApp conversations between clients and the Ishyiga Assistant. Use this to list chats and fetch the full message thread.",
+        "Read WhatsApp conversations between clients and the Ishyiga Assistant. Every conversation endpoint requires Authorization: Bearer <CONVERSATIONS_API_KEY>. Traffic is HTTPS on Railway.",
     },
     servers: [{ url: baseUrl }],
+    security: [{ bearerAuth: [] }],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "The CONVERSATIONS_API_KEY value.",
+        },
+        apiKey: {
+          type: "apiKey",
+          in: "header",
+          name: "X-Api-Key",
+        },
+      },
+    },
     paths: {
       "/api/conversations": {
         get: {
@@ -33,6 +48,7 @@ function getOpenApi(req, res) {
           ],
           responses: {
             200: { description: "Conversation inbox" },
+            401: { description: "Missing or wrong API key" },
           },
         },
       },
