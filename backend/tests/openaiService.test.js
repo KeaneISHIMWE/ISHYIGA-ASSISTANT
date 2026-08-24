@@ -57,6 +57,19 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.match(SYSTEM_PROMPT, /AIMABLE/);
     assert.match(SYSTEM_PROMPT, /kimenyi/i);
+    assert.match(SYSTEM_PROMPT, /CLIENT RECORD WHEN PROVIDED/);
+  });
+
+  it("appends a client record to the system prompt when provided", () => {
+    const input = buildInput("The invoice failed", [], null, [
+      "## CURRENT CLIENT RECORD",
+      "- Company: Demo Shop",
+    ].join("\n"));
+
+    assert.match(input[0].content, /Ishyiga Software/i);
+    assert.match(input[0].content, /CURRENT CLIENT RECORD/);
+    assert.match(input[0].content, /Demo Shop/);
+    assert.equal(input[1].content, "The invoice failed");
   });
 
   it("attaches a screenshot as vision content", () => {
@@ -164,6 +177,22 @@ describe("generateReply", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "insufficient_quota");
+  });
+
+  it("sends the client record inside the system prompt", async () => {
+    let systemContent = "";
+    const result = await generateReply({
+      message: "The invoice failed",
+      clientContext: "## CURRENT CLIENT RECORD\n- Company: Demo Shop",
+      client: fakeClient(async (payload) => {
+        systemContent = payload.messages[0].content;
+        return completion("I can see Demo Shop uses Ishyiga. Let's check the invoice.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(systemContent, /Ishyiga Software/i);
+    assert.match(systemContent, /Demo Shop/);
   });
 
   it("sends screenshots to the vision model", async () => {

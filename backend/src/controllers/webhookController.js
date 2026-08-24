@@ -1,6 +1,7 @@
 const { logger } = require("../utils/logger");
 const { generateReply, FALLBACK_REPLY } = require("../services/openaiService");
 const { matchSpecialContactReply } = require("../services/contactRules");
+const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
   persistInboundEvent,
   persistOutboundReply,
@@ -127,6 +128,7 @@ async function processTextEvents(
     markReadAndShowTypingFn = markReadAndShowTyping,
     downloadMediaFn = downloadWhatsAppMedia,
     persistOutbound = persistOutboundReply,
+    loadClientProfileFn = loadClientPromptContext,
     typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
     nowFn = Date.now,
     sleepFn = sleep,
@@ -206,10 +208,26 @@ async function processTextEvents(
         }
 
         if (!generated) {
+          let clientContext = "";
+          try {
+            const clientLookup = await loadClientProfileFn({
+              phoneNumber: event.customerNumber,
+            });
+            clientContext =
+              clientLookup && clientLookup.clientContext
+                ? clientLookup.clientContext
+                : "";
+          } catch (_error) {
+            logger.error("Client profile lookup failed", {
+              reason: "unhandled",
+            });
+          }
+
           generated = await generateReplyFn({
             message: event.message,
             history,
             image,
+            clientContext,
           });
         }
       }

@@ -29,6 +29,9 @@ const env = {
   groqApiKey: readEnv("GROQ_API_KEY", ""),
   groqModel: readEnv("GROQ_MODEL", "openai/gpt-oss-20b"),
   groqVisionModel: readEnv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b"),
+  clientsApiUrl: readEnv("CLIENTS_API_URL", ""),
+  clientsApiKey: readEnv("CLIENTS_API_KEY", ""),
+  clientsApiTimeoutMs: Number(readEnv("CLIENTS_API_TIMEOUT_MS", "8000")),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {
@@ -37,6 +40,13 @@ if (!Number.isInteger(env.port) || env.port <= 0) {
 
 if (!env.databaseUrl.startsWith("postgres")) {
   throw new Error("DATABASE_URL must be a PostgreSQL connection string");
+}
+
+if (
+  !Number.isInteger(env.clientsApiTimeoutMs) ||
+  env.clientsApiTimeoutMs <= 0
+) {
+  throw new Error("CLIENTS_API_TIMEOUT_MS must be a positive integer");
 }
 
 module.exports = { env };

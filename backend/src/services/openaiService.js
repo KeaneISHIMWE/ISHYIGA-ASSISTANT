@@ -310,7 +310,17 @@ Do not add any other words, punctuation, emojis, or explanation.
 
 This contact-specific rule takes priority over normal conversational behavior for that contact and trigger only.
 
-If any other contact sends "kimenyi", do not apply this special rule. Respond according to the normal support instructions.`;
+If any other contact sends "kimenyi", do not apply this special rule. Respond according to the normal support instructions.
+
+## 27. CLIENT RECORD WHEN PROVIDED
+
+If a CURRENT CLIENT RECORD section is appended below this prompt, treat those facts as the known profile for this WhatsApp number.
+
+Use the record to personalize support (name the company, refer to the installed product or version, and avoid asking for facts you already have).
+
+Do not invent extra client facts. If a field is missing, ask the client instead of guessing.
+
+Never repeat TIN, email, or other identifiers back unless the client already used them in the chat and it helps resolve the issue.`;
 
 function createClient(apiKey) {
   return new OpenAI({
@@ -353,9 +363,17 @@ function buildUserContent(message, image) {
   ];
 }
 
-function buildInput(message, history, image) {
+function buildSystemPrompt(clientContext) {
+  if (typeof clientContext !== "string" || !clientContext.trim()) {
+    return SYSTEM_PROMPT;
+  }
+
+  return `${SYSTEM_PROMPT}\n\n${clientContext.trim()}`;
+}
+
+function buildInput(message, history, image, clientContext) {
   return [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: buildSystemPrompt(clientContext) },
     ...normalizeHistory(history),
     { role: "user", content: buildUserContent(message, image) },
   ];
@@ -401,7 +419,13 @@ function classifyOpenAIError(error) {
   return "api_error";
 }
 
-async function generateReply({ message, history = [], image, client } = {}) {
+async function generateReply({
+  message,
+  history = [],
+  image,
+  client,
+  clientContext,
+} = {}) {
   const hasImage = Boolean(image && image.dataUrl);
   if (!hasImage && (typeof message !== "string" || !message.trim())) {
     return {
@@ -440,7 +464,12 @@ async function generateReply({ message, history = [], image, client } = {}) {
     const response = await groq.chat.completions.create(
       {
         model,
-        messages: buildInput(trimmedMessage, safeHistory, hasImage ? image : null),
+        messages: buildInput(
+          trimmedMessage,
+          safeHistory,
+          hasImage ? image : null,
+          clientContext
+        ),
       },
       { timeout: REQUEST_TIMEOUT_MS }
     );
@@ -472,6 +501,7 @@ async function generateReply({ message, history = [], image, client } = {}) {
 module.exports = {
   generateReply,
   buildInput,
+  buildSystemPrompt,
   classifyOpenAIError,
   FALLBACK_REPLY,
   SYSTEM_PROMPT,
