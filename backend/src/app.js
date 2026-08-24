@@ -2,11 +2,13 @@ const path = require("path");
 const express = require("express");
 const { env } = require("./config/env");
 const { requestLogger } = require("./middleware/requestLogger");
+const { allowPublicReadCors } = require("./middleware/cors");
 const { healthRouter } = require("./routes/health");
 const { messagesRouter } = require("./routes/messages");
 const { webhookRouter } = require("./routes/webhook");
 const { conversationsRouter } = require("./routes/conversations");
 const { dashboardRouter } = require("./routes/dashboard");
+const { openapiRouter } = require("./routes/openapi");
 
 const app = express();
 
@@ -22,11 +24,13 @@ app.use(
   })
 );
 app.use(requestLogger);
+app.use(allowPublicReadCors);
 
 app.use("/api/health", healthRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/dashboard", dashboardRouter);
+app.use("/api/openapi.json", openapiRouter);
 app.use("/webhook", webhookRouter);
 app.use(express.static(path.join(__dirname, "../public")));
 

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ishyiga Assistant — Conversation API</title>
+  <style>
+    :root {
+      --navy: #0b1f3a;
+      --teal: #0f766e;
+      --gold: #c4a35a;
+      --ink: #e8eef6;
+      --muted: #93a0b4;
+      --paper: #08131f;
+      --card: #112033;
+      --line: #1e334d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 28px;
+      background: var(--navy);
+      border-bottom: 2px solid var(--gold);
+    }
+    header h1 { margin: 0; font-size: 22px; }
+    header p { margin: 4px 0 0; color: var(--muted); }
+    a { color: var(--gold); }
+    main { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 18px;
+    }
+    h2 { margin: 0 0 10px; font-size: 18px; }
+    h3 { margin: 18px 0 8px; font-size: 15px; color: var(--gold); }
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+      background: #0b1624;
+      border-radius: 8px;
+    }
+    code { padding: 2px 6px; }
+    pre { padding: 12px 14px; overflow: auto; line-height: 1.45; }
+    .method {
+      display: inline-block;
+      background: var(--teal);
+      color: white;
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+    input, button {
+      font: inherit;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+    }
+    input { background: #0b1624; color: var(--ink); min-width: 260px; }
+    button {
+      background: var(--gold);
+      color: #1a1406;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .ok { color: #8ee0c2; }
+    .err { color: #f0a0a0; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Conversation API</h1>
+      <p>Live documentation for fetching Ishyiga WhatsApp chats</p>
+    </div>
+    <div>
+      <a href="/">Open dashboard</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Base URL</h2>
+      <pre id="baseUrl"></pre>
+      <p class="muted">No API key. All conversation endpoints are <code>GET</code> and return JSON. CORS is open for these read endpoints so another website or app can call them.</p>
+      <p>Machine-readable spec: <a id="openapiLink" href="/api/openapi.json">/api/openapi.json</a></p>
+    </section>
+
+    <section class="card">
+      <h2>How to fetch chats</h2>
+      <ol>
+        <li>Call <code>GET /api/conversations</code> to get the inbox.</li>
+        <li>Copy a conversation <code>id</code>.</li>
+        <li>Call <code>GET /api/conversations/{id}</code> to get every message in that chat.</li>
+      </ol>
+      <p>In the message list, <code>sender: "customer"</code> is the client. <code>sender: "assistant"</code> is the AI reply.</p>
+    </section>
+
+    <section class="card">
+      <span class="method">GET</span>
+      <strong>/api/conversations</strong>
+      <p>List every conversation. Newest activity first.</p>
+      <h3>Query</h3>
+      <table>
+        <tr><th>Name</th><th>Required</th><th>Meaning</th></tr>
+        <tr><td><code>phone</code></td><td>No</td><td>Filter by WhatsApp number. <code>+250 792 431 896</code> and <code>250792431896</code> are the same.</td></tr>
+      </table>
+      <div class="row">
+        <input id="phone" placeholder="Optional phone, e.g. 250792431896" />
+        <button type="button" data-try="list">Try it</button>
+      </div>
+      <h3>curl</h3>
+      <pre id="curlList"></pre>
+      <h3>JavaScript</h3>
+      <pre id="jsList"></pre>
+      <h3>Live response</h3>
+      <pre id="outList" class="muted">Press Try it to call the live API.</pre>
+    </section>
+
+    <section class="card">
+      <span class="method">GET</span>
+      <strong>/api/conversations/{conversationId}</strong>
+      <p>Return one conversation with customer details and the full message thread.</p>
+      <h3>Path</h3>
+      <table>
+        <tr><th>Name</th><th>Required</th><th>Meaning</th></tr>
+        <tr><td><code>conversationId</code></td><td>Yes</td><td>UUID from the inbox response.</td></tr>
+      </table>
+      <div class="row">
+        <input id="conversationId" placeholder="conversation UUID" />
+        <button type="button" data-try="one">Try it</button>
+      </div>
+      <h3>curl</h3>
+      <pre id="curlOne"></pre>
+      <h3>JavaScript</h3>
+      <pre id="jsOne"></pre>
+      <h3>Live response</h3>
+      <pre id="outOne" class="muted">Press Try it, or list chats first and we will fill an id for you.</pre>
+    </section>
+
+    <section class="card">
+      <span class="method">GET</span>
+      <strong>/api/dashboard</strong>
+      <p>Totals: customers, conversations, inbound messages, outbound messages, screenshots.</p>
+      <div class="row">
+        <button type="button" data-try="stats">Try it</button>
+      </div>
+      <pre id="curlStats"></pre>
+      <pre id="outStats" class="muted">Press Try it to call the live API.</pre>
+    </section>
+
+    <section class="card">
+      <h2>Message fields</h2>
+      <table>
+        <tr><th>Field</th><th>Meaning</th></tr>
+        <tr><td><code>sender</code></td><td><code>customer</code> = client WhatsApp message. <code>assistant</code> = AI reply.</td></tr>
+        <tr><td><code>senderLabel</code></td><td>Ready-to-show label: Client or Assistant.</td></tr>
+        <tr><td><code>text</code></td><td>Message body.</td></tr>
+        <tr><td><code>type</code></td><td><code>text</code> or <code>image</code>.</td></tr>
+        <tr><td><code>createdAt</code></td><td>ISO timestamp.</td></tr>
+        <tr><td><code>whatsappMessageId</code></td><td>Meta message id when WhatsApp assigned one.</td></tr>
+        <tr><td><code>deliveredToWhatsApp</code></td><td><code>true</code> if the message reached WhatsApp.</td></tr>
+        <tr><td><code>path</code></td><td>How that message moved through the system.</td></tr>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Errors</h2>
+      <table>
+        <tr><th>Status</th><th>Body</th></tr>
+        <tr><td>400</td><td><code>{"error":"Invalid conversation id"}</code></td></tr>
+        <tr><td>404</td><td><code>{"error":"Conversation not found"}</code></td></tr>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const base = window.location.origin;
+    document.getElementById("baseUrl").textContent = base;
+    document.getElementById("openapiLink").href = `${base}/api/openapi.json`;
+
+    function listUrl() {
+      const phone = document.getElementById("phone").value.trim();
+      return phone
+        ? `${base}/api/conversations?phone=${encodeURIComponent(phone)}`
+        : `${base}/api/conversations`;
+    }
+
+    function oneUrl() {
+      const id = document.getElementById("conversationId").value.trim() || "{conversationId}";
+      return `${base}/api/conversations/${id}`;
+    }
+
+    function renderSnippets() {
+      document.getElementById("curlList").textContent = `curl "${listUrl()}"`;
+      document.getElementById("jsList").textContent =
+        `const res = await fetch("${listUrl()}");\nconst data = await res.json();\nconst chats = data.conversations;`;
+      document.getElementById("curlOne").textContent = `curl "${oneUrl()}"`;
+      document.getElementById("jsOne").textContent =
+        `const res = await fetch("${oneUrl()}");\nconst data = await res.json();\nconst messages = data.conversation.messages;`;
+      document.getElementById("curlStats").textContent = `curl "${base}/api/dashboard"`;
+    }
+
+    async function show(id, url) {
+      const node = document.getElementById(id);
+      node.className = "";
+      node.textContent = "Loading…";
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        node.textContent = JSON.stringify(data, null, 2);
+        node.className = res.ok ? "ok" : "err";
+        return data;
+      } catch (error) {
+        node.className = "err";
+        node.textContent = String(error);
+        return null;
+      }
+    }
+
+    document.getElementById("phone").addEventListener("input", renderSnippets);
+    document.getElementById("conversationId").addEventListener("input", renderSnippets);
+
+    document.querySelector('[data-try="list"]').addEventListener("click", async () => {
+      const data = await show("outList", listUrl());
+      const first = data && data.conversations && data.conversations[0];
+      if (first && first.id && !document.getElementById("conversationId").value.trim()) {
+        document.getElementById("conversationId").value = first.id;
+        renderSnippets();
+      }
+    });
+    document.querySelector('[data-try="one"]').addEventListener("click", () => show("outOne", oneUrl()));
+    document.querySelector('[data-try="stats"]').addEventListener("click", () => show("outStats", `${base}/api/dashboard`));
+
+    renderSnippets();
+  </script>
+</body>
+</html>
