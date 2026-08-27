@@ -310,7 +310,7 @@ describe("fetchClientProfile", () => {
 
       assert.equal(result.ok, false);
       assert.equal(result.error, "not_found");
-      assert.match(result.clientContext, /NEW \/ UNVERIFIED CONTACT/);
+      assert.match(result.clientContext, /UNREGISTERED \/ UNRECOGNIZED CONTACT/);
       assert.match(result.clientContext, /0781111111/);
     } finally {
       env.clientsApiUrl = previous;

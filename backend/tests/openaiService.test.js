@@ -54,7 +54,7 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /Ishyiga Software/i);
     assert.match(SYSTEM_PROMPT, /Customer Support Assistant/i);
     assert.match(SYSTEM_PROMPT, /CARE/i);
-    assert.match(SYSTEM_PROMPT, /NEW \/ UNVERIFIED CONTACT/);
+    assert.match(SYSTEM_PROMPT, /UNREGISTERED \/ UNRECOGNIZED CONTACT/);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);

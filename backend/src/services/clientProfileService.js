@@ -426,13 +426,17 @@ function formatUnknownContactContext(phoneNumber) {
   const carePhone = toCarePhone(phoneNumber);
   return `CUSTOMER CONTEXT
 
-CONTACT STATUS: NEW / UNVERIFIED CONTACT
+CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT
 WhatsApp number: ${carePhone || "unknown"}
 
 This number was not found in CARE.
-Do not greet them as a known company.
+This is an identity-discovery step, not a normal support conversation.
+Do not treat them as a verified Ishyiga customer.
 Do not invent a company name, contract, payment, product, or version.
-Follow the New / Unknown Contact Flow.
+
+If their message is only a greeting, reply with a short friendly greeting such as "Hello 👋". Do not ask for the company yet. Do not say "how can I help you today?"
+If their message is a question or support request, greet them, say this number isn't registered with us yet, and ask for their name and company. Do not answer the support question yet.
+Do not say they are not a customer or that access is denied.
 OTP and account-linking are not available. Do not generate an OTP or claim a number was linked.`;
 }
 
