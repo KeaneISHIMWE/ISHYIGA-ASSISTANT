@@ -29,9 +29,19 @@ const env = {
   groqApiKey: readEnv("GROQ_API_KEY", ""),
   groqModel: readEnv("GROQ_MODEL", "openai/gpt-oss-20b"),
   groqVisionModel: readEnv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b"),
-  clientsApiUrl: readEnv("CLIENTS_API_URL", ""),
-  clientsApiKey: readEnv("CLIENTS_API_KEY", ""),
-  clientsApiTimeoutMs: Number(readEnv("CLIENTS_API_TIMEOUT_MS", "8000")),
+  customerApiUrl: readEnv("CUSTOMER_API_URL", readEnv("CLIENTS_API_URL", "")),
+  customerApiSessionCookie: readEnv("CUSTOMER_API_SESSION_COOKIE", ""),
+  customerApiTimeoutMs: Number(
+    readEnv("CUSTOMER_API_TIMEOUT_MS", readEnv("CLIENTS_API_TIMEOUT_MS", "8000"))
+  ),
+  clientsApiUrl: readEnv("CUSTOMER_API_URL", readEnv("CLIENTS_API_URL", "")),
+  clientsApiKey: readEnv(
+    "CLIENTS_API_KEY",
+    readEnv("CUSTOMER_API_KEY", "")
+  ),
+  clientsApiTimeoutMs: Number(
+    readEnv("CUSTOMER_API_TIMEOUT_MS", readEnv("CLIENTS_API_TIMEOUT_MS", "8000"))
+  ),
   conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
 };
 
@@ -44,10 +54,10 @@ if (!env.databaseUrl.startsWith("postgres")) {
 }
 
 if (
-  !Number.isInteger(env.clientsApiTimeoutMs) ||
-  env.clientsApiTimeoutMs <= 0
+  !Number.isInteger(env.customerApiTimeoutMs) ||
+  env.customerApiTimeoutMs <= 0
 ) {
-  throw new Error("CLIENTS_API_TIMEOUT_MS must be a positive integer");
+  throw new Error("CUSTOMER_API_TIMEOUT_MS must be a positive integer");
 }
 
 module.exports = { env };

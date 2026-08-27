@@ -1,6 +1,5 @@
 const { logger } = require("../utils/logger");
 const { generateReply, FALLBACK_REPLY } = require("../services/openaiService");
-const { matchSpecialContactReply } = require("../services/contactRules");
 const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
   persistInboundEvent,
@@ -184,52 +183,44 @@ async function processTextEvents(
     }
 
     let generated;
-    const specialReply = matchSpecialContactReply({
-      customerNumber: event.customerNumber,
-      message: event.message,
-    });
 
     try {
-      if (specialReply) {
-        generated = { ok: true, reply: specialReply, error: null };
-      } else {
-        let image = null;
-        if (event.kind === "image") {
-          const media = await downloadMediaFn({ mediaId: event.mediaId });
-          if (!media || !media.ok || !media.dataUrl) {
-            generated = {
-              ok: false,
-              reply: IMAGE_UNREADABLE_REPLY,
-              error: (media && media.error) || "media_failed",
-            };
-          } else {
-            image = { dataUrl: media.dataUrl };
-          }
+      let image = null;
+      if (event.kind === "image") {
+        const media = await downloadMediaFn({ mediaId: event.mediaId });
+        if (!media || !media.ok || !media.dataUrl) {
+          generated = {
+            ok: false,
+            reply: IMAGE_UNREADABLE_REPLY,
+            error: (media && media.error) || "media_failed",
+          };
+        } else {
+          image = { dataUrl: media.dataUrl };
         }
+      }
 
-        if (!generated) {
-          let clientContext = "";
-          try {
-            const clientLookup = await loadClientProfileFn({
-              phoneNumber: event.customerNumber,
-            });
-            clientContext =
-              clientLookup && clientLookup.clientContext
-                ? clientLookup.clientContext
-                : "";
-          } catch (_error) {
-            logger.error("Client profile lookup failed", {
-              reason: "unhandled",
-            });
-          }
-
-          generated = await generateReplyFn({
-            message: event.message,
-            history,
-            image,
-            clientContext,
+      if (!generated) {
+        let clientContext = "";
+        try {
+          const clientLookup = await loadClientProfileFn({
+            phoneNumber: event.customerNumber,
+          });
+          clientContext =
+            clientLookup && clientLookup.clientContext
+              ? clientLookup.clientContext
+              : "";
+        } catch (_error) {
+          logger.error("Client profile lookup failed", {
+            reason: "unhandled",
           });
         }
+
+        generated = await generateReplyFn({
+          message: event.message,
+          history,
+          image,
+          clientContext,
+        });
       }
     } catch (_error) {
       logger.error("Groq request failed", { reason: "unhandled" });

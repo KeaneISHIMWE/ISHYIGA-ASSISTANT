@@ -53,21 +53,21 @@ describe("buildInput", () => {
   it("uses the Ishyiga Software support prompt", () => {
     assert.match(SYSTEM_PROMPT, /Ishyiga Software/i);
     assert.match(SYSTEM_PROMPT, /Customer Support Assistant/i);
-    assert.match(SYSTEM_PROMPT, /RRA/i);
+    assert.match(SYSTEM_PROMPT, /CARE/i);
+    assert.match(SYSTEM_PROMPT, /NEW \/ UNVERIFIED CONTACT/);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
-    assert.match(SYSTEM_PROMPT, /AIMABLE/);
-    assert.match(SYSTEM_PROMPT, /kimenyi/i);
-    assert.match(SYSTEM_PROMPT, /CLIENT RECORD WHEN PROVIDED/);
+    assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
+    assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);
   });
 
-  it("appends a client record to the system prompt when provided", () => {
+  it("appends customer context to the system prompt when provided", () => {
     const input = buildInput("The invoice failed", [], null, [
-      "## CURRENT CLIENT RECORD",
+      "CUSTOMER CONTEXT",
       "- Company: Demo Shop",
     ].join("\n"));
 
     assert.match(input[0].content, /Ishyiga Software/i);
-    assert.match(input[0].content, /CURRENT CLIENT RECORD/);
+    assert.match(input[0].content, /CUSTOMER CONTEXT/);
     assert.match(input[0].content, /Demo Shop/);
     assert.equal(input[1].content, "The invoice failed");
   });
@@ -183,7 +183,7 @@ describe("generateReply", () => {
     let systemContent = "";
     const result = await generateReply({
       message: "The invoice failed",
-      clientContext: "## CURRENT CLIENT RECORD\n- Company: Demo Shop",
+      clientContext: "CUSTOMER CONTEXT\n- Company: Demo Shop",
       client: fakeClient(async (payload) => {
         systemContent = payload.messages[0].content;
         return completion("I can see Demo Shop uses Ishyiga. Let's check the invoice.");

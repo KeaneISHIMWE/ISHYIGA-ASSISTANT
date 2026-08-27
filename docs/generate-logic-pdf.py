@@ -375,7 +375,7 @@ def page_message_flow(c, page, total):
         (16 * mm, y - 42 * mm, LIGHT_GREEN, "Persist inbound", "customer → open conversation → message"),
         (16 * mm, y - 66 * mm, LIGHT_ORANGE, "Duplicate?", "same WhatsApp message id → stop"),
         (16 * mm, y - 90 * mm, LIGHT_TEAL, "Load history", "prior customer + assistant turns"),
-        (16 * mm, y - 114 * mm, LIGHT_GOLD, "Contact rule?", "+250788880066 + kimenyi → AIMABLE"),
+        (16 * mm, y - 114 * mm, LIGHT_GOLD, "CARE lookup", "by this WhatsApp contact only"),
         (16 * mm, y - 138 * mm, LIGHT_PURPLE, "Image?", "download media → vision model"),
         (16 * mm, y - 162 * mm, LIGHT_ORANGE, "Client API", "lookup by WhatsApp number"),
         (16 * mm, y - 186 * mm, LIGHT_TEAL, "Groq generateReply", "base prompt + client record + history"),
@@ -396,7 +396,7 @@ def page_message_flow(c, page, total):
         (112 * mm, y - 18 * mm, "Typing starts immediately so the client sees activity while we work."),
         (112 * mm, y - 50 * mm, "Unique WhatsApp message ids prevent double replies on Meta retries."),
         (112 * mm, y - 90 * mm, "History excludes the current inbound id so Groq does not see it twice."),
-        (112 * mm, y - 122 * mm, "Special contact rule wins. Groq and the client API are not called."),
+        (112 * mm, y - 122 * mm, "Every contact uses CARE + Groq. There is no test-number shortcut."),
         (112 * mm, y - 154 * mm, "Unreadable screenshot → fixed sentence, no Groq call."),
         (112 * mm, y - 186 * mm, "Client API failure is fail-open: empty context, still call Groq."),
         (112 * mm, y - 218 * mm, "If send fails, the assistant text is not stored as a delivered reply."),
@@ -422,10 +422,10 @@ def page_decision(c, page, total):
     box_label(c, 158 * mm, y - 50 * mm, 36 * mm, 16 * mm, "Stop", "no second reply")
     right_arrow(c, 131 * mm, 158 * mm, y - 42 * mm, RED)
 
-    diamond(c, 105 * mm, y - 76 * mm, 52 * mm, 20 * mm, LIGHT_GOLD, GOLD, "Special contact\n+ kimenyi?")
+    diamond(c, 105 * mm, y - 76 * mm, 52 * mm, 20 * mm, LIGHT_GOLD, GOLD, "CARE record\nfor this phone?")
     down_arrow(c, 105 * mm, y - 52 * mm, y - 66 * mm)
     rounded_box(c, 16 * mm, y - 84 * mm, 42 * mm, 16 * mm, LIGHT_GREEN, GREEN, 4)
-    box_label(c, 16 * mm, y - 84 * mm, 42 * mm, 16 * mm, "AIMABLE", "exact text only")
+    box_label(c, 16 * mm, y - 84 * mm, 42 * mm, 16 * mm, "Add context", "this contact only")
     arrow(c, 79 * mm, y - 76 * mm, 58 * mm, y - 76 * mm, GREEN)
 
     diamond(c, 105 * mm, y - 110 * mm, 52 * mm, 20 * mm, LIGHT_PURPLE, PURPLE, "Image and\nmedia failed?")
@@ -607,7 +607,7 @@ def page_components(c, page, total):
         ("controllers/webhookController.js", "Orchestrates one inbound event end to end"),
         ("services/whatsappService.js", "Signature, parse, typing, media, send"),
         ("services/conversationService.js", "Find/create customer + conversation + messages"),
-        ("services/contactRules.js", "Hard-coded AIMABLE / kimenyi rule"),
+        ("services/contactRules.js", "Normalize WhatsApp phone digits"),
         ("services/clientProfileService.js", "Client API lookup, normalize, prompt block"),
         ("services/openaiService.js", "Base SYSTEM_PROMPT + Groq chat/vision"),
         ("config/env.js", "CLIENTS_API_URL / KEY / TIMEOUT_MS"),
@@ -732,7 +732,7 @@ def page_prompt(c, page, total):
     y = h1(c, "Two-layer system prompt", HEIGHT - 28 * mm)
     y = paragraph(
         c,
-        "Layer A is always present. It is the Ishyiga Software support constitution: personality, troubleshooting method, RRA rules, security, language, WhatsApp style, and the AIMABLE contact rule. Layer B is only present when the client API returned a usable record.",
+        "Layer A is always present. It is the Ishyiga Software support constitution: personality, troubleshooting method, RRA rules, security, language, and WhatsApp style. Layer B is only present when the client API returned a usable record for this contact.",
         16 * mm,
         y,
         WIDTH - 32 * mm,
@@ -753,7 +753,7 @@ def page_prompt(c, page, total):
         "Never invent status, versions, tickets",
         "Never request passwords or tokens",
         "Match the client's language",
-        "Contact rule: kimenyi → AIMABLE",
+        "Use CARE facts for this contact only",
     ]
     ay = y - 22 * mm
     for line in lines_a:

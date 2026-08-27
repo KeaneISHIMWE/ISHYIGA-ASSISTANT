@@ -143,7 +143,7 @@ describe("processTextEvents", () => {
           steps.push(`client:${phoneNumber}`);
           return {
             ok: true,
-            clientContext: "## CURRENT CLIENT RECORD\n- Company: Demo Shop",
+            clientContext: "CUSTOMER CONTEXT\n- Company: Demo Shop",
           };
         },
         typingMinVisibleMs: 0,
@@ -167,7 +167,7 @@ describe("processTextEvents", () => {
       "inbound:wamid.1",
       "history:conv-1",
       "client:250788000000",
-      "groq:Hello:1:## CURRENT CLIENT RECORD\n- Company: Demo Shop",
+      "groq:Hello:1:CUSTOMER CONTEXT\n- Company: Demo Shop",
       "send:250788000000",
       "outbound:wamid.OUT1",
     ]);
@@ -397,15 +397,15 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, IMAGE_UNREADABLE_REPLY);
   });
 
-  it("replies AIMABLE when the special contact sends kimenyi", async () => {
+  it("sends every contact through CARE lookup and Groq", async () => {
     const steps = [];
     const results = await processTextEvents(
       [
         {
           kind: "text",
-          messageId: "wamid.special",
+          messageId: "wamid.1",
           customerNumber: "250788880066",
-          message: "KIMENYI",
+          message: "Hello",
         },
       ],
       {
@@ -413,9 +413,13 @@ describe("processTextEvents", () => {
         markReadAndShowTypingFn: async () => ({ ok: true }),
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
-        generateReplyFn: async () => {
-          steps.push("groq");
-          throw new Error("should not generate");
+        loadClientProfileFn: async ({ phoneNumber }) => {
+          steps.push(`client:${phoneNumber}`);
+          return { clientContext: "CUSTOMER CONTEXT\n- Company: Demo Shop" };
+        },
+        generateReplyFn: async ({ message, clientContext }) => {
+          steps.push(`groq:${message}:${clientContext || ""}`);
+          return { ok: true, reply: "We can help." };
         },
         sendTextMessageFn: async ({ to, body }) => {
           steps.push(`send:${to}:${body}`);
@@ -425,8 +429,12 @@ describe("processTextEvents", () => {
       }
     );
 
-    assert.deepEqual(steps, ["send:250788880066:AIMABLE"]);
-    assert.equal(results[0].reply, "AIMABLE");
+    assert.deepEqual(steps, [
+      "client:250788880066",
+      "groq:Hello:CUSTOMER CONTEXT\n- Company: Demo Shop",
+      "send:250788880066:We can help.",
+    ]);
+    assert.equal(results[0].reply, "We can help.");
     assert.equal(results[0].sent, true);
   });
 

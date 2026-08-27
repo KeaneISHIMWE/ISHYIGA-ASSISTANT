@@ -1,26 +1,28 @@
-const SPECIAL_CONTACT_DIGITS = "250788880066";
-const SPECIAL_TRIGGER = /kimenyi/i;
-const SPECIAL_REPLY = "AIMABLE";
-
 function digitsOnly(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
-function matchSpecialContactReply({ customerNumber, message } = {}) {
-  const customer = digitsOnly(customerNumber);
-  if (customer !== SPECIAL_CONTACT_DIGITS) {
-    return null;
+function toCanonicalWhatsappDigits(value) {
+  const digits = digitsOnly(value);
+  if (!digits) {
+    return "";
   }
 
-  if (typeof message !== "string" || !SPECIAL_TRIGGER.test(message)) {
-    return null;
+  if (digits.startsWith("250") && digits.length >= 12) {
+    return digits.slice(0, 12);
   }
 
-  return SPECIAL_REPLY;
+  if (digits.startsWith("0") && digits.length === 10) {
+    return `250${digits.slice(1)}`;
+  }
+
+  if (digits.length === 9 && digits.startsWith("7")) {
+    return `250${digits}`;
+  }
+
+  return digits;
 }
 
 module.exports = {
-  matchSpecialContactReply,
-  SPECIAL_CONTACT_DIGITS,
-  SPECIAL_REPLY,
+  toCanonicalWhatsappDigits,
 };
