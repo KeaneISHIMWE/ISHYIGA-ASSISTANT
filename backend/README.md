@@ -88,7 +88,7 @@ Expect JSON with `"ok": true` and a real `reply`. The server log should include 
 
 If Groq returns a rate limit, timeout, or another API error, the reply is this fallback (the process does not crash):
 
-`Sorry, I could not generate a reply just now. Please try again in a moment.`
+`Sorry, I didn't get that properly. Could you please explain it to me again?`
 
 ## Phase 7 — Webhook to Groq
 

@@ -6,7 +6,7 @@ const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
 const REQUEST_TIMEOUT_MS = 20_000;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const FALLBACK_REPLY =
-  "Sorry, I could not generate a reply just now. Please try again in a moment.";
+  "Sorry, I didn't get that properly. Could you please explain it to me again?";
 
 function createClient(apiKey) {
   return new OpenAI({
