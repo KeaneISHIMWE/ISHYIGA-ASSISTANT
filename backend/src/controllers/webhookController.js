@@ -3,7 +3,7 @@ const {
   generateReply,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
-  resolveFailedCustomerReply,
+  resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
@@ -239,7 +239,12 @@ async function processTextEvents(
     if (!generated.ok && generated.reply === FALLBACK_REPLY) {
       generated = {
         ...generated,
-        reply: resolveFailedCustomerReply(history, generated.reply),
+        reply: resolveCustomerFacingFailure({
+          message: event.message,
+          history,
+          hasImage: event.kind === "image",
+          reply: generated.reply,
+        }),
       };
     }
 

@@ -9,6 +9,7 @@ const {
 const {
   FALLBACK_REPLY,
   ESCALATION_REPLY,
+  GREETING_REPLY,
 } = require("../src/services/openaiService");
 
 describe("generateRepliesForInboundEvents", () => {
@@ -474,7 +475,7 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, "We can help.");
   });
 
-  it("sends the fallback on the first Groq failure", async () => {
+  it("greets the customer when Groq fails on a hello", async () => {
     const results = await processTextEvents(
       [
         {
@@ -482,6 +483,37 @@ describe("processTextEvents", () => {
           messageId: "wamid.1",
           customerNumber: "250788000000",
           message: "Hello",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        generateReplyFn: async () => ({
+          ok: false,
+          reply: FALLBACK_REPLY,
+          error: "api_error",
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, GREETING_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.equal(results[0].reply, GREETING_REPLY);
+  });
+
+  it("sends the fallback on the first Groq failure for a real question", async () => {
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.1",
+          customerNumber: "250788000000",
+          message: "The invoice failed to post",
         },
       ],
       {
@@ -512,7 +544,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.3",
           customerNumber: "250788000000",
-          message: "hello",
+          message: "The invoice failed to post",
         },
       ],
       {
@@ -521,7 +553,7 @@ describe("processTextEvents", () => {
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [
           { role: "assistant", content: FALLBACK_REPLY },
-          { role: "user", content: "hello" },
+          { role: "user", content: "The invoice failed to post" },
           { role: "assistant", content: FALLBACK_REPLY },
         ],
         generateReplyFn: async () => ({

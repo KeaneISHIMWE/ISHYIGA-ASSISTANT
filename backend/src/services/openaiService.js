@@ -10,7 +10,10 @@ const FALLBACK_REPLY =
   "Sorry, I didn't get that properly. Could you please explain it to me again?";
 const ESCALATION_REPLY =
   "I'm having trouble answering right now. Please contact our support team and we'll help you from there.";
+const GREETING_REPLY = "Hello 👋";
 const MAX_CONSECUTIVE_FALLBACKS = 2;
+const GREETING_ONLY_PATTERN =
+  /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|bonjour|salut|muraho|habari)(?:\s+there)?[!.,\s]*$/i;
 
 function createClient(apiKey) {
   return new OpenAI({
@@ -107,12 +110,45 @@ function countConsecutiveFailedReplies(history) {
   return count;
 }
 
+function isGreetingOnly(message) {
+  if (typeof message !== "string") {
+    return false;
+  }
+
+  return GREETING_ONLY_PATTERN.test(message.trim());
+}
+
 function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY) {
   if (countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS) {
     return ESCALATION_REPLY;
   }
 
   return reply || FALLBACK_REPLY;
+}
+
+function resolveCustomerFacingFailure({
+  message,
+  history,
+  hasImage = false,
+  reply = FALLBACK_REPLY,
+} = {}) {
+  if (!hasImage && isGreetingOnly(message)) {
+    return GREETING_REPLY;
+  }
+
+  return resolveFailedCustomerReply(history, reply);
+}
+
+function failureResult({ message, history, image, error }) {
+  return {
+    ok: false,
+    reply: resolveCustomerFacingFailure({
+      message,
+      history,
+      hasImage: Boolean(image && image.dataUrl),
+    }),
+    error,
+  };
 }
 
 function extractReplyText(response) {
@@ -152,7 +188,23 @@ function classifyOpenAIError(error) {
     return "auth";
   }
 
+  if (
+    status === 400 &&
+    /context|token|too large|maximum/i.test(message)
+  ) {
+    return "context_length";
+  }
+
   return "api_error";
+}
+
+function shouldRetryWithoutHistory(reason, historyCount) {
+  return (
+    historyCount > 0 &&
+    (reason === "api_error" ||
+      reason === "timeout" ||
+      reason === "context_length")
+  );
 }
 
 async function generateReply({
@@ -164,11 +216,12 @@ async function generateReply({
 } = {}) {
   const hasImage = Boolean(image && image.dataUrl);
   if (!hasImage && (typeof message !== "string" || !message.trim())) {
-    return {
-      ok: false,
-      reply: FALLBACK_REPLY,
+    return failureResult({
+      message,
+      history,
+      image,
       error: "Missing message",
-    };
+    });
   }
 
   const apiKey = env.groqApiKey;
@@ -177,11 +230,12 @@ async function generateReply({
 
   if (!groq) {
     logger.error("Groq request failed", { reason: "missing_api_key" });
-    return {
-      ok: false,
-      reply: FALLBACK_REPLY,
+    return failureResult({
+      message,
+      history,
+      image,
       error: "Groq is not configured",
-    };
+    });
   }
 
   const trimmedMessage =
@@ -196,13 +250,13 @@ async function generateReply({
     hasImage,
   });
 
-  try {
-    const response = await groq.chat.completions.create(
+  const requestCompletion = (historyForRequest) =>
+    groq.chat.completions.create(
       {
         model,
         messages: buildInput(
           trimmedMessage,
-          safeHistory,
+          historyForRequest,
           hasImage ? image : null,
           clientContext
         ),
@@ -210,21 +264,7 @@ async function generateReply({
       { timeout: REQUEST_TIMEOUT_MS }
     );
 
-    const text = extractReplyText(response);
-
-    if (!text) {
-      logger.warn("Groq response received", { empty: true });
-      return {
-        ok: false,
-        reply: FALLBACK_REPLY,
-        error: "Empty model response",
-      };
-    }
-
-    logger.info("Groq response received", { model });
-    return { ok: true, reply: text };
-  } catch (error) {
-    const reason = classifyOpenAIError(error);
+  const logFailure = (error, reason) => {
     const detail =
       typeof error.message === "string" ? error.message.slice(0, 180) : "";
     logger.error("Groq request failed", {
@@ -233,11 +273,52 @@ async function generateReply({
       code: error.code || null,
       detail,
     });
-    return {
-      ok: false,
-      reply: FALLBACK_REPLY,
+  };
+
+  try {
+    let response;
+    try {
+      response = await requestCompletion(safeHistory);
+    } catch (error) {
+      const reason = classifyOpenAIError(error);
+      logFailure(error, reason);
+
+      if (!shouldRetryWithoutHistory(reason, safeHistory.length)) {
+        return failureResult({
+          message: trimmedMessage,
+          history: safeHistory,
+          image,
+          error: reason,
+        });
+      }
+
+      logger.warn("Groq request retrying without history", { reason });
+      response = await requestCompletion([]);
+    }
+
+    const text = extractReplyText(response);
+
+    if (!text) {
+      logger.warn("Groq response received", { empty: true });
+      return failureResult({
+        message: trimmedMessage,
+        history: safeHistory,
+        image,
+        error: "Empty model response",
+      });
+    }
+
+    logger.info("Groq response received", { model });
+    return { ok: true, reply: text };
+  } catch (error) {
+    const reason = classifyOpenAIError(error);
+    logFailure(error, reason);
+    return failureResult({
+      message: trimmedMessage,
+      history: safeHistory,
+      image,
       error: reason,
-    };
+    });
   }
 }
 
@@ -248,8 +329,11 @@ module.exports = {
   classifyOpenAIError,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
+  GREETING_REPLY,
   MAX_CONSECUTIVE_FALLBACKS,
+  isGreetingOnly,
   resolveFailedCustomerReply,
+  resolveCustomerFacingFailure,
   SYSTEM_PROMPT,
   REQUEST_TIMEOUT_MS,
   MAX_HISTORY_MESSAGES,

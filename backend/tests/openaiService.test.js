@@ -6,7 +6,9 @@ const {
   classifyOpenAIError,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
+  GREETING_REPLY,
   resolveFailedCustomerReply,
+  resolveCustomerFacingFailure,
   SYSTEM_PROMPT,
 } = require("../src/services/openaiService");
 
@@ -123,6 +125,16 @@ describe("classifyOpenAIError", () => {
   it("classifies other API errors", () => {
     assert.equal(classifyOpenAIError({ status: 500 }), "api_error");
   });
+
+  it("classifies context length errors", () => {
+    assert.equal(
+      classifyOpenAIError({
+        status: 400,
+        message: "This model's maximum context length was exceeded",
+      }),
+      "context_length"
+    );
+  });
 });
 
 describe("generateReply", () => {
@@ -145,7 +157,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.reply, GREETING_REPLY);
     assert.equal(result.error, "Empty model response");
   });
 
@@ -160,7 +172,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.reply, GREETING_REPLY);
     assert.equal(result.error, "timeout");
   });
 
@@ -175,7 +187,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.reply, GREETING_REPLY);
     assert.equal(result.error, "rate_limit");
   });
 
@@ -191,8 +203,50 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.reply, GREETING_REPLY);
     assert.equal(result.error, "insufficient_quota");
+  });
+
+  it("retries without history after a context error", async () => {
+    let calls = 0;
+    const result = await generateReply({
+      message: "What services do you offer?",
+      history: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: FALLBACK_REPLY },
+      ],
+      client: fakeClient(async (payload) => {
+        calls += 1;
+        if (calls === 1) {
+          assert.ok(payload.messages.length > 2);
+          const error = new Error("This model's maximum context length was exceeded");
+          error.status = 400;
+          throw error;
+        }
+
+        assert.equal(payload.messages.length, 2);
+        return completion("We can help with the company's services.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+    assert.match(result.reply, /services/);
+  });
+
+  it("uses the generic fallback for a real question when Groq fails", async () => {
+    const result = await generateReply({
+      message: "The invoice failed to post",
+      client: fakeClient(async () => {
+        const error = new Error("Request timed out");
+        error.name = "APIConnectionTimeoutError";
+        throw error;
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.error, "timeout");
   });
 
   it("sends the client record inside the system prompt", async () => {
@@ -273,6 +327,16 @@ describe("resolveFailedCustomerReply", () => {
     assert.equal(
       resolveFailedCustomerReply(history, FALLBACK_REPLY),
       ESCALATION_REPLY
+    );
+  });
+
+  it("answers greetings instead of the fallback", () => {
+    assert.equal(
+      resolveCustomerFacingFailure({
+        message: "good morning",
+        history: [],
+      }),
+      GREETING_REPLY
     );
   });
 });
