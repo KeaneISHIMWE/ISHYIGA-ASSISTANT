@@ -92,6 +92,8 @@ describe("dashboardService", () => {
 
     assert.equal(detail.counts.messages, 1);
     assert.equal(detail.messages[0].text, "Hello");
+    assert.equal(detail.lines[0].from, "Client");
+    assert.equal(detail.lines[0].text, "Hello");
     assert.equal(detail.clientProfile.company, "Kigali Mart");
   });
 

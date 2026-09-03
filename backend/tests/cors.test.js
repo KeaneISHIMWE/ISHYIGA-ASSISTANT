@@ -9,7 +9,7 @@ describe("isPublicReadPath", () => {
     assert.equal(isPublicReadPath("/api/dashboard"), true);
     assert.equal(isPublicReadPath("/api/openapi.json"), true);
     assert.equal(isPublicReadPath("/webhook"), false);
-    assert.equal(isPublicReadPath("/api/messages"), false);
+    assert.equal(isPublicReadPath("/api/messages"), true);
   });
 });
 

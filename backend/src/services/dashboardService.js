@@ -91,6 +91,18 @@ function toMessage(row) {
   };
 }
 
+function toConversationLine(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    from: senderLabel(row.sender_type),
+    text: row.message,
+    at: toIso(row.created_at),
+  };
+}
+
 function toStats(row) {
   if (!row) {
     return {
@@ -132,6 +144,7 @@ function toConversationDetail(row, messages, clientProfile) {
     ...summary,
     clientProfile: clientProfile || null,
     messages: messages.map(toMessage),
+    lines: messages.map(toConversationLine),
   };
 }
 
@@ -150,6 +163,7 @@ module.exports = {
   toConversationSummary,
   toConversationDetail,
   toMessage,
+  toConversationLine,
   toStats,
   digitsOnly,
   isUuid,

@@ -13,7 +13,7 @@ function getOpenApi(req, res) {
       title: "Ishyiga Assistant Conversation API",
       version: "1.0.0",
       description:
-        "Read WhatsApp conversations between clients and the Ishyiga Assistant. Every conversation endpoint requires Authorization: Bearer <CONVERSATIONS_API_KEY>. Traffic is HTTPS on Railway.",
+        "Read WhatsApp conversations and send a client message to the Ishyiga Assistant. Every conversation and message endpoint requires Authorization: Bearer <CONVERSATIONS_API_KEY>. Traffic is HTTPS on Railway.",
     },
     servers: [{ url: baseUrl }],
     security: [{ bearerAuth: [] }],
@@ -56,7 +56,7 @@ function getOpenApi(req, res) {
         get: {
           summary: "Get one conversation by WhatsApp number",
           description:
-            "Returns the most recent conversation for a phone number, including every stored message. Accepts 078, +250, or 250 formats.",
+            "Returns the most recent conversation for a phone number, including every stored message as a line-by-line thread. Accepts 078, +250, or 250 formats.",
           parameters: [
             {
               name: "phone",
@@ -71,6 +71,44 @@ function getOpenApi(req, res) {
             400: { description: "Phone number is missing" },
             401: { description: "Missing or wrong API key" },
             404: { description: "Conversation not found" },
+          },
+        },
+      },
+      "/api/messages": {
+        post: {
+          summary: "Send a client message to the assistant",
+          description:
+            "The client writes a message and the assistant replies. Include phone to keep the conversation and use CARE plus chat history.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["message"],
+                  properties: {
+                    message: {
+                      type: "string",
+                      example: "Hello, what services do you offer?",
+                    },
+                    phone: {
+                      type: "string",
+                      example: "250792431896",
+                    },
+                    name: {
+                      type: "string",
+                      example: "Alex",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: "Assistant reply and line-by-line thread" },
+            400: { description: "message is required" },
+            401: { description: "Missing or wrong API key" },
+            503: { description: "Groq is not configured" },
           },
         },
       },
