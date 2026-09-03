@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   listConversations,
   getConversation,
+  getConversationByPhone,
   getOverview,
 } = require("../src/controllers/conversationsController");
 
@@ -94,6 +95,74 @@ describe("conversationsController", () => {
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.conversation.messages[0].text, "Hello");
     assert.equal(res.body.conversation.clientProfile.company, "Kigali Mart");
+  });
+
+  it("returns a conversation by phone number", async () => {
+    const calls = [];
+    const res = mockRes();
+    await getConversationByPhone(
+      { query: { phone: "0788000000" } },
+      res,
+      {
+        findLatestByPhoneDigits: async (candidates) => {
+          calls.push(candidates);
+          return {
+            id: "11111111-1111-1111-1111-111111111111",
+            status: "open",
+            created_at: new Date("2026-08-23T10:00:00.000Z"),
+            updated_at: new Date("2026-08-23T10:00:00.000Z"),
+            customer_id: "cust-1",
+            whatsapp_number: "250788000000",
+            customer_name: "Alex",
+            customer_created_at: new Date("2026-08-20T09:00:00.000Z"),
+          };
+        },
+        listMessages: async (conversationId) => [
+          {
+            id: "m1",
+            conversation_id: conversationId,
+            sender_type: "customer",
+            message: "Hello",
+            message_type: "text",
+            created_at: new Date("2026-08-23T10:00:00.000Z"),
+          },
+        ],
+        loadClientProfileFn: async () => ({
+          profile: { company: "Demo Shop" },
+        }),
+      }
+    );
+
+    assert.deepEqual(calls[0], ["0788000000", "250788000000"]);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.conversation.messages[0].text, "Hello");
+    assert.equal(res.body.conversation.clientProfile.company, "Demo Shop");
+  });
+
+  it("rejects a missing phone number", async () => {
+    const res = mockRes();
+    await getConversationByPhone({ query: {} }, res, {
+      findLatestByPhoneDigits: async () => {
+        throw new Error("should not query");
+      },
+    });
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error, "Phone number is required");
+  });
+
+  it("returns 404 when no conversation exists for the phone", async () => {
+    const res = mockRes();
+    await getConversationByPhone(
+      { query: { phone: "250792431896" } },
+      res,
+      {
+        findLatestByPhoneDigits: async () => null,
+      }
+    );
+
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.body.error, "Conversation not found");
   });
 
   it("rejects an invalid conversation id", async () => {

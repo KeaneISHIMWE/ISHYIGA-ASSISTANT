@@ -44,6 +44,7 @@ describe("openapiController", () => {
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.openapi, "3.0.3");
     assert.ok(res.body.paths["/api/conversations"]);
+    assert.ok(res.body.paths["/api/conversations/by-phone"]);
     assert.ok(res.body.paths["/api/conversations/{conversationId}"]);
     assert.ok(res.body.paths["/api/dashboard"]);
   });

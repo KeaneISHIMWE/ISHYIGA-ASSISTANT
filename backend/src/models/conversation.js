@@ -90,6 +90,41 @@ async function listSummaries({ phoneDigits = null } = {}) {
   return result.rows;
 }
 
+async function findLatestByPhoneDigits(phoneDigitsList) {
+  if (!Array.isArray(phoneDigitsList) || phoneDigitsList.length === 0) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        c.id,
+        c.status,
+        c.created_at,
+        c.updated_at,
+        cu.id AS customer_id,
+        cu.whatsapp_number,
+        cu.name AS customer_name,
+        cu.created_at AS customer_created_at
+      FROM conversations c
+      JOIN customers cu ON cu.id = c.customer_id
+      LEFT JOIN LATERAL (
+        SELECT created_at
+        FROM messages
+        WHERE conversation_id = c.id
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+      ) last ON true
+      WHERE regexp_replace(cu.whatsapp_number, '\\D', '', 'g') = ANY($1::text[])
+      ORDER BY COALESCE(last.created_at, c.updated_at) DESC, c.created_at DESC
+      LIMIT 1
+    `,
+    [phoneDigitsList]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function findByIdWithCustomer(conversationId) {
   const result = await pool.query(
     `
@@ -134,6 +169,7 @@ module.exports = {
   create,
   findOrCreateOpen,
   listSummaries,
+  findLatestByPhoneDigits,
   findByIdWithCustomer,
   getStats,
 };

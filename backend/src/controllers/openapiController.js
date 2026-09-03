@@ -52,6 +52,28 @@ function getOpenApi(req, res) {
           },
         },
       },
+      "/api/conversations/by-phone": {
+        get: {
+          summary: "Get one conversation by WhatsApp number",
+          description:
+            "Returns the most recent conversation for a phone number, including every stored message. Accepts 078, +250, or 250 formats.",
+          parameters: [
+            {
+              name: "phone",
+              in: "query",
+              required: true,
+              schema: { type: "string", example: "0781111111" },
+              description: "WhatsApp number. Spaces and + are ignored.",
+            },
+          ],
+          responses: {
+            200: { description: "Full conversation thread" },
+            400: { description: "Phone number is missing" },
+            401: { description: "Missing or wrong API key" },
+            404: { description: "Conversation not found" },
+          },
+        },
+      },
       "/api/conversations/{conversationId}": {
         get: {
           summary: "Get one conversation with all messages",

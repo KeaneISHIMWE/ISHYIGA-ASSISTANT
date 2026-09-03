@@ -1,6 +1,7 @@
 const conversationModel = require("../models/conversation");
 const messageModel = require("../models/message");
 const { loadClientPromptContext } = require("../services/clientProfileService");
+const { phoneLookupCandidates } = require("../services/contactRules");
 const { logger } = require("../utils/logger");
 const {
   toConversationSummary,
@@ -9,6 +10,28 @@ const {
   digitsOnly,
   isUuid,
 } = require("../services/dashboardService");
+
+async function loadConversationDetail(
+  row,
+  {
+    listMessages = messageModel.listByConversationId,
+    loadClientProfileFn = loadClientPromptContext,
+  } = {}
+) {
+  const messages = await listMessages(row.id);
+  let clientProfile = null;
+
+  try {
+    const lookup = await loadClientProfileFn({
+      phoneNumber: row.whatsapp_number,
+    });
+    clientProfile = lookup && lookup.profile ? lookup.profile : null;
+  } catch (_error) {
+    logger.error("Client profile lookup failed", { reason: "dashboard" });
+  }
+
+  return toConversationDetail(row, messages, clientProfile);
+}
 
 async function listConversations(
   req,
@@ -44,20 +67,38 @@ async function getConversation(
     return res.status(404).json({ error: "Conversation not found" });
   }
 
-  const messages = await listMessages(conversationId);
-  let clientProfile = null;
+  return res.status(200).json({
+    conversation: await loadConversationDetail(row, {
+      listMessages,
+      loadClientProfileFn,
+    }),
+  });
+}
 
-  try {
-    const lookup = await loadClientProfileFn({
-      phoneNumber: row.whatsapp_number,
-    });
-    clientProfile = lookup && lookup.profile ? lookup.profile : null;
-  } catch (_error) {
-    logger.error("Client profile lookup failed", { reason: "dashboard" });
+async function getConversationByPhone(
+  req,
+  res,
+  {
+    findLatestByPhoneDigits = conversationModel.findLatestByPhoneDigits,
+    listMessages = messageModel.listByConversationId,
+    loadClientProfileFn = loadClientPromptContext,
+  } = {}
+) {
+  const candidates = phoneLookupCandidates(req.query && req.query.phone);
+  if (candidates.length === 0) {
+    return res.status(400).json({ error: "Phone number is required" });
+  }
+
+  const row = await findLatestByPhoneDigits(candidates);
+  if (!row) {
+    return res.status(404).json({ error: "Conversation not found" });
   }
 
   return res.status(200).json({
-    conversation: toConversationDetail(row, messages, clientProfile),
+    conversation: await loadConversationDetail(row, {
+      listMessages,
+      loadClientProfileFn,
+    }),
   });
 }
 
@@ -73,5 +114,6 @@ async function getOverview(
 module.exports = {
   listConversations,
   getConversation,
+  getConversationByPhone,
   getOverview,
 };
