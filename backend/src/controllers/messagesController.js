@@ -10,6 +10,16 @@ const {
 } = require("../services/conversationService");
 const { logger } = require("../utils/logger");
 
+function describeMessageApi(_req, res) {
+  return res.status(405).json({
+    error: "Use POST /api/messages with a JSON body",
+    example: {
+      message: "Hello, what services do you offer?",
+      phone: "250792431896",
+    },
+  });
+}
+
 function toLines(history, message, reply) {
   const lines = (Array.isArray(history) ? history : []).map((item) => ({
     from: item.role === "assistant" ? "Assistant" : "Client",
@@ -108,4 +118,4 @@ async function createMessage(
   });
 }
 
-module.exports = { createMessage, toLines };
+module.exports = { createMessage, describeMessageApi, toLines };

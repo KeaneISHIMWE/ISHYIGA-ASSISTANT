@@ -1,6 +1,9 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
-const { createMessage } = require("../src/controllers/messagesController");
+const {
+  createMessage,
+  describeMessageApi,
+} = require("../src/controllers/messagesController");
 
 function mockRes() {
   return {
@@ -16,6 +19,16 @@ function mockRes() {
     },
   };
 }
+
+describe("describeMessageApi", () => {
+  it("tells the client to POST a JSON body", () => {
+    const res = mockRes();
+    describeMessageApi({}, res);
+    assert.equal(res.statusCode, 405);
+    assert.match(res.body.error, /POST \/api\/messages/);
+    assert.equal(res.body.example.message.includes("Hello"), true);
+  });
+});
 
 describe("createMessage", () => {
   it("rejects a missing message", async () => {
