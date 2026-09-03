@@ -39,6 +39,19 @@ describe("buildInput", () => {
     ]);
   });
 
+  it("keeps only the most recent history turns", () => {
+    const history = Array.from({ length: 40 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `turn ${index + 1}`,
+    }));
+    const input = buildInput("Hello", history);
+
+    assert.equal(input.length, 18);
+    assert.equal(input[1].content, "turn 25");
+    assert.equal(input[16].content, "turn 40");
+    assert.equal(input[17].content, "Hello");
+  });
+
   it("ignores invalid history entries", () => {
     const input = buildInput("Hello", [
       { role: "system", content: "ignore me" },

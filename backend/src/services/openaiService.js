@@ -4,6 +4,7 @@ const { logger } = require("../utils/logger");
 const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_HISTORY_MESSAGES = 16;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const FALLBACK_REPLY =
   "Sorry, I didn't get that properly. Could you please explain it to me again?";
@@ -21,7 +22,7 @@ function normalizeHistory(history) {
     return [];
   }
 
-  return history
+  const normalized = history
     .filter(
       (item) =>
         item &&
@@ -33,6 +34,12 @@ function normalizeHistory(history) {
       role: item.role,
       content: item.content.trim(),
     }));
+
+  if (normalized.length <= MAX_HISTORY_MESSAGES) {
+    return normalized;
+  }
+
+  return normalized.slice(-MAX_HISTORY_MESSAGES);
 }
 
 function buildUserContent(message, image) {
@@ -175,7 +182,14 @@ async function generateReply({
     return { ok: true, reply: text };
   } catch (error) {
     const reason = classifyOpenAIError(error);
-    logger.error("Groq request failed", { reason });
+    const detail =
+      typeof error.message === "string" ? error.message.slice(0, 180) : "";
+    logger.error("Groq request failed", {
+      reason,
+      status: error.status || error.statusCode || null,
+      code: error.code || null,
+      detail,
+    });
     return {
       ok: false,
       reply: FALLBACK_REPLY,
@@ -192,5 +206,6 @@ module.exports = {
   FALLBACK_REPLY,
   SYSTEM_PROMPT,
   REQUEST_TIMEOUT_MS,
+  MAX_HISTORY_MESSAGES,
   GROQ_BASE_URL,
 };
