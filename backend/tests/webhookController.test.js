@@ -6,7 +6,10 @@ const {
   processTextEvents,
   IMAGE_UNREADABLE_REPLY,
 } = require("../src/controllers/webhookController");
-const { FALLBACK_REPLY } = require("../src/services/openaiService");
+const {
+  FALLBACK_REPLY,
+  ESCALATION_REPLY,
+} = require("../src/services/openaiService");
 
 describe("generateRepliesForInboundEvents", () => {
   it("sends text events to Groq and keeps unsupported events out", async () => {
@@ -469,5 +472,71 @@ describe("processTextEvents", () => {
     assert.equal(receivedContext, "");
     assert.equal(results[0].sent, true);
     assert.equal(results[0].reply, "We can help.");
+  });
+
+  it("sends the fallback on the first Groq failure", async () => {
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.1",
+          customerNumber: "250788000000",
+          message: "Hello",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        generateReplyFn: async () => ({
+          ok: false,
+          reply: FALLBACK_REPLY,
+          error: "api_error",
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, FALLBACK_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.equal(results[0].reply, FALLBACK_REPLY);
+  });
+
+  it("escalates after two fallback replies instead of repeating them", async () => {
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.3",
+          customerNumber: "250788000000",
+          message: "hello",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [
+          { role: "assistant", content: FALLBACK_REPLY },
+          { role: "user", content: "hello" },
+          { role: "assistant", content: FALLBACK_REPLY },
+        ],
+        generateReplyFn: async () => ({
+          ok: false,
+          reply: FALLBACK_REPLY,
+          error: "api_error",
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, ESCALATION_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.equal(results[0].reply, ESCALATION_REPLY);
   });
 });

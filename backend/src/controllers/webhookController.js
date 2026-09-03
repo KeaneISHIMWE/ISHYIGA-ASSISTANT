@@ -1,5 +1,10 @@
 const { logger } = require("../utils/logger");
-const { generateReply, FALLBACK_REPLY } = require("../services/openaiService");
+const {
+  generateReply,
+  FALLBACK_REPLY,
+  ESCALATION_REPLY,
+  resolveFailedCustomerReply,
+} = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
   persistInboundEvent,
@@ -231,6 +236,13 @@ async function processTextEvents(
       };
     }
 
+    if (!generated.ok && generated.reply === FALLBACK_REPLY) {
+      generated = {
+        ...generated,
+        reply: resolveFailedCustomerReply(history, generated.reply),
+      };
+    }
+
     logger.info("Groq reply generated", {
       ok: generated.ok,
       error: generated.error || null,
@@ -333,4 +345,5 @@ module.exports = {
   processTextEvents,
   TYPING_MIN_VISIBLE_MS,
   IMAGE_UNREADABLE_REPLY,
+  ESCALATION_REPLY,
 };

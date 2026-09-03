@@ -5,6 +5,8 @@ const {
   buildInput,
   classifyOpenAIError,
   FALLBACK_REPLY,
+  ESCALATION_REPLY,
+  resolveFailedCustomerReply,
   SYSTEM_PROMPT,
 } = require("../src/services/openaiService");
 
@@ -232,5 +234,45 @@ describe("generateReply", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "Missing message");
+  });
+});
+
+describe("resolveFailedCustomerReply", () => {
+  it("keeps the first fallbacks before escalation", () => {
+    assert.equal(resolveFailedCustomerReply([], FALLBACK_REPLY), FALLBACK_REPLY);
+    assert.equal(
+      resolveFailedCustomerReply(
+        [{ role: "assistant", content: FALLBACK_REPLY }],
+        FALLBACK_REPLY
+      ),
+      FALLBACK_REPLY
+    );
+  });
+
+  it("escalates after two consecutive fallbacks", () => {
+    const history = [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: FALLBACK_REPLY },
+      { role: "user", content: "hello" },
+      { role: "assistant", content: FALLBACK_REPLY },
+      { role: "user", content: "good morning" },
+    ];
+
+    assert.equal(
+      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      ESCALATION_REPLY
+    );
+  });
+
+  it("stays on escalation after it has already been sent", () => {
+    const history = [
+      { role: "assistant", content: FALLBACK_REPLY },
+      { role: "assistant", content: ESCALATION_REPLY },
+    ];
+
+    assert.equal(
+      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      ESCALATION_REPLY
+    );
   });
 });

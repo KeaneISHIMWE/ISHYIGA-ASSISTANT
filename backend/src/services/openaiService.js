@@ -8,6 +8,9 @@ const MAX_HISTORY_MESSAGES = 16;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const FALLBACK_REPLY =
   "Sorry, I didn't get that properly. Could you please explain it to me again?";
+const ESCALATION_REPLY =
+  "I'm having trouble answering right now. Please contact our support team and we'll help you from there.";
+const MAX_CONSECUTIVE_FALLBACKS = 2;
 
 function createClient(apiKey) {
   return new OpenAI({
@@ -70,6 +73,46 @@ function buildInput(message, history, image, clientContext) {
     ...normalizeHistory(history),
     { role: "user", content: buildUserContent(message, image) },
   ];
+}
+
+function isFailedAssistantReply(content) {
+  return content === FALLBACK_REPLY || content === ESCALATION_REPLY;
+}
+
+function countConsecutiveFailedReplies(history) {
+  if (!Array.isArray(history)) {
+    return 0;
+  }
+
+  let count = 0;
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const item = history[index];
+    if (!item || item.role === "user") {
+      continue;
+    }
+
+    if (item.role !== "assistant") {
+      break;
+    }
+
+    const content = typeof item.content === "string" ? item.content.trim() : "";
+    if (!isFailedAssistantReply(content)) {
+      break;
+    }
+
+    count += 1;
+  }
+
+  return count;
+}
+
+function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY) {
+  if (countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS) {
+    return ESCALATION_REPLY;
+  }
+
+  return reply || FALLBACK_REPLY;
 }
 
 function extractReplyText(response) {
@@ -204,6 +247,9 @@ module.exports = {
   buildSystemPrompt,
   classifyOpenAIError,
   FALLBACK_REPLY,
+  ESCALATION_REPLY,
+  MAX_CONSECUTIVE_FALLBACKS,
+  resolveFailedCustomerReply,
   SYSTEM_PROMPT,
   REQUEST_TIMEOUT_MS,
   MAX_HISTORY_MESSAGES,

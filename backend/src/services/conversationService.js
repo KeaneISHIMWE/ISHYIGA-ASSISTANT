@@ -4,6 +4,8 @@ const customerModel = require("../models/customer");
 const conversationModel = require("../models/conversation");
 const messageModel = require("../models/message");
 
+const HISTORY_LOAD_LIMIT = 20;
+
 function toChatHistory(messages, { excludeWhatsappMessageId } = {}) {
   if (!Array.isArray(messages)) {
     return [];
@@ -34,7 +36,8 @@ async function loadRecentHistory(
   conversationId,
   {
     excludeWhatsappMessageId,
-    listMessages = messageModel.listByConversationId,
+    limit = HISTORY_LOAD_LIMIT,
+    listMessages = messageModel.listRecentByConversationId,
   } = {}
 ) {
   if (!conversationId) {
@@ -42,7 +45,7 @@ async function loadRecentHistory(
   }
 
   try {
-    const rows = await listMessages(conversationId);
+    const rows = await listMessages(conversationId, limit);
     return toChatHistory(rows, { excludeWhatsappMessageId });
   } catch (_error) {
     logger.error("History load failed");
@@ -150,4 +153,5 @@ module.exports = {
   persistOutboundReply,
   loadRecentHistory,
   toChatHistory,
+  HISTORY_LOAD_LIMIT,
 };

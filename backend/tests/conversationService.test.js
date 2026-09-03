@@ -5,6 +5,7 @@ const {
   persistOutboundReply,
   toChatHistory,
   loadRecentHistory,
+  HISTORY_LOAD_LIMIT,
 } = require("../src/services/conversationService");
 
 describe("persistInboundEvent", () => {
@@ -176,6 +177,20 @@ describe("toChatHistory", () => {
 });
 
 describe("loadRecentHistory", () => {
+  it("asks the database for only the recent turns", async () => {
+    const calls = [];
+    await loadRecentHistory("conv-1", {
+      listMessages: async (conversationId, limit) => {
+        calls.push({ conversationId, limit });
+        return [];
+      },
+    });
+
+    assert.deepEqual(calls, [
+      { conversationId: "conv-1", limit: HISTORY_LOAD_LIMIT },
+    ]);
+  });
+
   it("returns an empty list when history cannot be loaded", async () => {
     const history = await loadRecentHistory("conv-1", {
       listMessages: async () => {
