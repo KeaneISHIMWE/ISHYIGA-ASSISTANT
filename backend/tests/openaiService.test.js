@@ -120,6 +120,14 @@ describe("classifyOpenAIError", () => {
       classifyOpenAIError({ status: 429, code: "insufficient_quota" }),
       "insufficient_quota"
     );
+    assert.equal(
+      classifyOpenAIError({
+        status: 429,
+        code: "credit_balance_exhausted",
+        message: "You have no credits remaining",
+      }),
+      "insufficient_quota"
+    );
   });
 
   it("classifies other API errors", () => {
@@ -138,7 +146,7 @@ describe("classifyOpenAIError", () => {
 });
 
 describe("generateReply", () => {
-  it("returns the model text from a successful Groq chat completion", async () => {
+  it("returns the model text from a successful OpenAI chat completion", async () => {
     const result = await generateReply({
       message: "Hello, what services do you offer?",
       client: fakeClient(async () =>
@@ -234,7 +242,7 @@ describe("generateReply", () => {
     assert.match(result.reply, /services/);
   });
 
-  it("uses the generic fallback for a real question when Groq fails", async () => {
+  it("uses the generic fallback for a real question when OpenAI fails", async () => {
     const result = await generateReply({
       message: "The invoice failed to post",
       client: fakeClient(async () => {
@@ -279,7 +287,7 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /invoice error/);
-    assert.equal(usedModel, "qwen/qwen3.6-27b");
+    assert.equal(usedModel, "gpt-5.6-sol");
   });
 
   it("rejects a missing message", async () => {

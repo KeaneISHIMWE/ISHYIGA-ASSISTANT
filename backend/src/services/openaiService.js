@@ -3,9 +3,8 @@ const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
 
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_HISTORY_MESSAGES = 16;
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const FALLBACK_REPLY =
   "Sorry, I didn't get that properly. Could you please explain it to me again?";
 const ESCALATION_REPLY =
@@ -18,7 +17,6 @@ const GREETING_ONLY_PATTERN =
 function createClient(apiKey) {
   return new OpenAI({
     apiKey,
-    baseURL: GROQ_BASE_URL,
     timeout: REQUEST_TIMEOUT_MS,
   });
 }
@@ -178,7 +176,11 @@ function classifyOpenAIError(error) {
   }
 
   if (status === 429) {
-    if (code === "insufficient_quota" || /quota/i.test(message)) {
+    if (
+      code === "insufficient_quota" ||
+      code === "credit_balance_exhausted" ||
+      /quota|no credits remaining|credit_balance/i.test(message)
+    ) {
       return "insufficient_quota";
     }
     return "rate_limit";
@@ -224,17 +226,17 @@ async function generateReply({
     });
   }
 
-  const apiKey = env.groqApiKey;
-  const model = hasImage ? env.groqVisionModel : env.groqModel;
-  const groq = client || (apiKey ? createClient(apiKey) : null);
+  const apiKey = env.openaiApiKey;
+  const model = hasImage ? env.openaiVisionModel : env.openaiModel;
+  const openai = client || (apiKey ? createClient(apiKey) : null);
 
-  if (!groq) {
-    logger.error("Groq request failed", { reason: "missing_api_key" });
+  if (!openai) {
+    logger.error("OpenAI request failed", { reason: "missing_api_key" });
     return failureResult({
       message,
       history,
       image,
-      error: "Groq is not configured",
+      error: "OpenAI is not configured",
     });
   }
 
@@ -244,14 +246,15 @@ async function generateReply({
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
 
-  logger.info("Groq request started", {
+  const startedAt = Date.now();
+  logger.info("OpenAI request started", {
     model,
     historyCount: safeHistory.length,
     hasImage,
   });
 
   const requestCompletion = (historyForRequest) =>
-    groq.chat.completions.create(
+    openai.chat.completions.create(
       {
         model,
         messages: buildInput(
@@ -267,10 +270,11 @@ async function generateReply({
   const logFailure = (error, reason) => {
     const detail =
       typeof error.message === "string" ? error.message.slice(0, 180) : "";
-    logger.error("Groq request failed", {
+    logger.error("OpenAI request failed", {
       reason,
       status: error.status || error.statusCode || null,
       code: error.code || null,
+      durationMs: Date.now() - startedAt,
       detail,
     });
   };
@@ -292,14 +296,14 @@ async function generateReply({
         });
       }
 
-      logger.warn("Groq request retrying without history", { reason });
+      logger.warn("OpenAI request retrying without history", { reason });
       response = await requestCompletion([]);
     }
 
     const text = extractReplyText(response);
 
     if (!text) {
-      logger.warn("Groq response received", { empty: true });
+      logger.warn("OpenAI response received", { empty: true });
       return failureResult({
         message: trimmedMessage,
         history: safeHistory,
@@ -308,7 +312,18 @@ async function generateReply({
       });
     }
 
-    logger.info("Groq response received", { model });
+    logger.info("OpenAI response received", {
+      model: response.model || model,
+      durationMs: Date.now() - startedAt,
+      promptTokens:
+        response.usage && response.usage.prompt_tokens != null
+          ? response.usage.prompt_tokens
+          : null,
+      completionTokens:
+        response.usage && response.usage.completion_tokens != null
+          ? response.usage.completion_tokens
+          : null,
+    });
     return { ok: true, reply: text };
   } catch (error) {
     const reason = classifyOpenAIError(error);
@@ -337,5 +352,4 @@ module.exports = {
   SYSTEM_PROMPT,
   REQUEST_TIMEOUT_MS,
   MAX_HISTORY_MESSAGES,
-  GROQ_BASE_URL,
 };

@@ -56,8 +56,8 @@ async function createMessage(
     return res.status(400).json({ error: "message is required" });
   }
 
-  if (!env.groqApiKey && generateReplyFn === generateReply) {
-    return res.status(503).json({ error: "Groq is not configured" });
+  if (!env.openaiApiKey && generateReplyFn === generateReply) {
+    return res.status(503).json({ error: "OpenAI is not configured" });
   }
 
   const trimmedMessage = message.trim();

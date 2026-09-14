@@ -1,7 +1,7 @@
 {
   "name": "ishyiga-whatsapp-assistant",
   "version": "0.1.0",
-  "description": "AI-powered WhatsApp assistant backend (WhatsApp Cloud API + Groq)",
+  "description": "AI-powered WhatsApp assistant backend (WhatsApp Cloud API + OpenAI)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -17,7 +17,7 @@
   },
   "keywords": [
     "whatsapp",
-    "groq",
+    "openai",
     "express"
   ],
   "license": "UNLICENSED",
