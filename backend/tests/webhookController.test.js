@@ -571,4 +571,79 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].reply, ESCALATION_REPLY);
   });
+
+  it("fires a ticket when the reply is ESCALATION_REPLY", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.esc",
+          customerNumber: "250788000000",
+          message: "The invoice failed to post",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [
+          { role: "assistant", content: FALLBACK_REPLY },
+          { role: "user", content: "still broken" },
+          { role: "assistant", content: FALLBACK_REPLY },
+        ],
+        loadClientProfileFn: async () => ({ clientContext: "" }),
+        generateReplyFn: async () => ({
+          ok: false,
+          reply: FALLBACK_REPLY,
+          error: "api_error",
+        }),
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
+        persistOutbound: async () => ({ ok: true }),
+        createTicketFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true, ticketId: "TKT-TEST" };
+        },
+      }
+    );
+
+    assert.equal(results[0].reply, ESCALATION_REPLY);
+    assert.equal(ticketCalls.length, 1);
+    assert.equal(ticketCalls[0].reason, "ai_escalation");
+    assert.equal(ticketCalls[0].customerNumber, "250788000000");
+  });
+
+  it("does not fire a ticket on a normal successful reply", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.ok",
+          customerNumber: "250788000000",
+          message: "How do I add a new product?",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({ clientContext: "" }),
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: "Go to Products → Add New and fill in the details.",
+        }),
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
+        persistOutbound: async () => ({ ok: true }),
+        createTicketFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true };
+        },
+      }
+    );
+
+    assert.equal(results[0].sent, true);
+    assert.equal(ticketCalls.length, 0);
+  });
 });

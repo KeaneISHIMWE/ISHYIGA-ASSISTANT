@@ -5,6 +5,7 @@ const {
   ESCALATION_REPLY,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
+const { createTicket } = require("../services/ticketService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
   persistInboundEvent,
@@ -133,6 +134,7 @@ async function processTextEvents(
     downloadMediaFn = downloadWhatsAppMedia,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
+    createTicketFn = createTicket,
     typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
     nowFn = Date.now,
     sleepFn = sleep,
@@ -188,6 +190,7 @@ async function processTextEvents(
     }
 
     let generated;
+    let clientContext = "";
 
     try {
       let image = null;
@@ -205,7 +208,6 @@ async function processTextEvents(
       }
 
       if (!generated) {
-        let clientContext = "";
         try {
           const clientLookup = await loadClientProfileFn({
             phoneNumber: event.customerNumber,
@@ -236,6 +238,7 @@ async function processTextEvents(
       };
     }
 
+
     if (!generated.ok && generated.reply === FALLBACK_REPLY) {
       generated = {
         ...generated,
@@ -246,6 +249,33 @@ async function processTextEvents(
           reply: generated.reply,
         }),
       };
+    }
+
+    // --- Ticket escalation (fire-and-forget, never blocks the WhatsApp reply) ---
+    const isEscalation = generated.reply === ESCALATION_REPLY;
+    const isUnregisteredNeedingVerification =
+      !generated.ok &&
+      typeof clientContext === "string" &&
+      clientContext.includes("CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT");
+
+    if (isEscalation || isUnregisteredNeedingVerification) {
+      const ticketReason = isEscalation
+        ? "ai_escalation"
+        : "unregistered_contact";
+      createTicketFn({
+        reason: ticketReason,
+        customerNumber: event.customerNumber,
+        message: event.message,
+        clientContext,
+      }).catch((ticketError) => {
+        logger.error("Ticket creation threw unexpectedly", {
+          reason: ticketReason,
+          error:
+            ticketError && ticketError.message
+              ? String(ticketError.message).slice(0, 120)
+              : "unknown",
+        });
+      });
     }
 
     logger.info("Groq reply generated", {
