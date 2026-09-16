@@ -1,5 +1,8 @@
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../../.env") });
+require("dotenv").config({
+  path: path.join(__dirname, "../../.env"),
+  override: true,
+});
 
 function readEnv(name, fallback) {
   const value = process.env[name];
@@ -26,9 +29,12 @@ const env = {
   whatsappAccessToken: readEnv("WHATSAPP_ACCESS_TOKEN", ""),
   whatsappPhoneNumberId: readEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
   whatsappApiVersion: readEnv("WHATSAPP_API_VERSION", "v23.0"),
-  groqApiKey: readEnv("GROQ_API_KEY", ""),
-  groqModel: readEnv("GROQ_MODEL", "openai/gpt-oss-20b"),
-  groqVisionModel: readEnv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b"),
+  openaiApiKey: readEnv("OPENAI_API_KEY", ""),
+  openaiModel: readEnv("OPENAI_MODEL", "gpt-5.6-sol"),
+  openaiVisionModel: readEnv(
+    "OPENAI_VISION_MODEL",
+    readEnv("OPENAI_MODEL", "gpt-5.6-sol")
+  ),
   customerApiUrl: readEnv("CUSTOMER_API_URL", readEnv("CLIENTS_API_URL", "")),
   customerApiSessionCookie: readEnv("CUSTOMER_API_SESSION_COOKIE", ""),
   customerApiTimeoutMs: Number(

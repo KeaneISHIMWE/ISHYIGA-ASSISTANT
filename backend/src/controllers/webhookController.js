@@ -55,7 +55,7 @@ async function generateRepliesForInboundEvents(
 
     try {
       const result = await generateReplyFn({ message: event.message });
-      logger.info("Groq reply generated", {
+      logger.info("OpenAI reply generated", {
         ok: result.ok,
         error: result.error || null,
       });
@@ -67,7 +67,7 @@ async function generateRepliesForInboundEvents(
         error: result.error || null,
       });
     } catch (_error) {
-      logger.error("Groq request failed", { reason: "unhandled" });
+      logger.error("OpenAI request failed", { reason: "unhandled" });
       replies.push({
         messageId: event.messageId,
         customerNumber: event.customerNumber,
@@ -230,7 +230,7 @@ async function processTextEvents(
         });
       }
     } catch (_error) {
-      logger.error("Groq request failed", { reason: "unhandled" });
+      logger.error("OpenAI request failed", { reason: "unhandled" });
       generated = {
         ok: false,
         reply: FALLBACK_REPLY,
@@ -278,7 +278,7 @@ async function processTextEvents(
       });
     }
 
-    logger.info("Groq reply generated", {
+    logger.info("OpenAI reply generated", {
       ok: generated.ok,
       error: generated.error || null,
     });

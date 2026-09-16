@@ -22,7 +22,7 @@ async function getHealth(_req, res) {
       tables: schema.tables,
     },
     integrations: {
-      groqConfigured: Boolean(env.groqApiKey),
+      openaiConfigured: Boolean(env.openaiApiKey),
       whatsappSendConfigured: Boolean(
         env.whatsappAccessToken && env.whatsappPhoneNumberId
       ),

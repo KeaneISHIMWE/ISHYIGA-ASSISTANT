@@ -1,6 +1,6 @@
 # Ishyiga WhatsApp AI Assistant
 
-Backend for a company WhatsApp assistant: customers message WhatsApp, the server replies with Groq.
+Backend for a company WhatsApp assistant: customers message WhatsApp, the server replies with OpenAI GPT-5.6 Sol.
 
 ## Phase 1 — Express server
 
@@ -60,15 +60,15 @@ The response body must be the raw challenge `1158201444`, not JSON.
 npm test
 ```
 
-## Phase 6 — Groq
+## Phase 6 — OpenAI
 
-`POST /api/messages` calls Groq through the existing OpenAI-compatible client. WhatsApp still does not send a reply.
+`POST /api/messages` calls OpenAI through the official SDK. WhatsApp still does not send a reply.
 
-Create a free key at [console.groq.com/keys](https://console.groq.com/keys) and put it in `.env` (do not paste it into chat):
+Put your OpenAI key in `.env` (do not paste it into chat):
 
 ```
-GROQ_API_KEY=
-GROQ_MODEL=openai/gpt-oss-20b
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.6-sol
 ```
 
 Run tests:
@@ -84,29 +84,29 @@ Live local check, with `npm run dev` running:
 Invoke-RestMethod -Method Post -Uri http://localhost:4000/api/messages -ContentType "application/json" -Body '{"message":"Hello, what services do you offer?"}'
 ```
 
-Expect JSON with `"ok": true` and a real `reply`. The server log should include `Groq request started` and `Groq response received`.
+Expect JSON with `"ok": true` and a real `reply`. The server log should include `OpenAI request started` and `OpenAI response received`.
 
-If Groq returns a rate limit, timeout, or another API error, the reply is this fallback (the process does not crash):
+If OpenAI returns a rate limit, timeout, or another API error, the reply is this fallback (the process does not crash):
 
 `Sorry, I didn't get that properly. Could you please explain it to me again?`
 
-## Phase 7 — Webhook to Groq
+## Phase 7 — Webhook to OpenAI
 
-`POST /webhook` still answers Meta with `{ "status": "received" }` first. Then each inbound text is sent to the same Groq service. The reply is logged.
+`POST /webhook` still answers Meta with `{ "status": "received" }` first. Then each inbound text is sent to the same OpenAI service. The reply is logged.
 
 Unsupported message types (images, stickers, and so on) are skipped.
 
 ## Phase 8 — Send the reply on WhatsApp
 
-After Groq returns text, Node calls the WhatsApp Cloud API:
+After OpenAI returns text, Node calls the WhatsApp Cloud API:
 
 `POST https://graph.facebook.com/{version}/{phone-number-id}/messages`
 
-Meta then delivers that text to the customer. The webhook still answers `{ "status": "received" }` first so Meta does not retry while Groq and the send are running.
+Meta then delivers that text to the customer. The webhook still answers `{ "status": "received" }` first so Meta does not retry while OpenAI and the send are running.
 
 Needs `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in `.env`. Temporary Meta tokens expire (often about 24 hours). If send logs `auth`, generate a new token in Graph API Explorer and save it locally. Do not paste it into chat.
 
-Live check: keep `npm run dev` and one ngrok tunnel running, then send a text to the test WhatsApp number. Expect logs `Groq response received` and `WhatsApp send completed`. The same text should appear in WhatsApp.
+Live check: keep `npm run dev` and one ngrok tunnel running, then send a text to the test WhatsApp number. Expect logs `OpenAI response received` and `WhatsApp send completed`. The same text should appear in WhatsApp.
 
 If Meta send fails (expired token, rate limit, timeout), the process does not crash. The customer may not see a reply that time.
 
@@ -117,7 +117,7 @@ After Meta is acknowledged, each text event is stored:
 1. Find or create the `customers` row for the WhatsApp number.
 2. Find or create one `open` conversation.
 3. Save the inbound text as `sender_type = customer`.
-4. After Groq and the WhatsApp send, save the reply as `sender_type = assistant`.
+4. After OpenAI and the WhatsApp send, save the reply as `sender_type = assistant`.
 
 A database write failure is logged and does not block the WhatsApp reply. Duplicate inbound WhatsApp message ids are ignored.
 
@@ -125,15 +125,15 @@ Health reports `phase: 9`.
 
 ## Phase 10 — Chat memory
 
-Before Groq runs, the webhook loads every saved message for that open conversation (not including the current inbound text). Those turns are passed as `history` so the model can use the full WhatsApp thread.
+Before OpenAI runs, the webhook loads every saved message for that open conversation (not including the current inbound text). Those turns are passed as `history` so the model can use the full WhatsApp thread.
 
-If history cannot be loaded, Groq still runs with only the current message. The server log `Groq request started` includes `historyCount`.
+If history cannot be loaded, OpenAI still runs with only the current message. The server log `OpenAI request started` includes `historyCount`.
 
 Health reports `phase: 10`.
 
 ## Phase 11 — Safer failures
 
-`GET /api/health` now includes `integrations.groqConfigured` and `integrations.whatsappSendConfigured` (booleans only, no secrets).
+`GET /api/health` now includes `integrations.openaiConfigured` and `integrations.whatsappSendConfigured` (booleans only, no secrets).
 
 WhatsApp send retries **once** on timeout, rate limit, or Meta 5xx. Auth and bad input are not retried.
 
@@ -164,8 +164,8 @@ Copy values from local `.env`. Do not commit them.
 | `WHATSAPP_ACCESS_TOKEN` | Long-lived Meta token |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp sender id |
 | `WHATSAPP_APP_SECRET` | Recommended so webhook signatures are checked |
-| `GROQ_API_KEY` | Groq key |
-| `GROQ_MODEL` | Default `openai/gpt-oss-20b` |
+| `OPENAI_API_KEY` | OpenAI key |
+| `OPENAI_MODEL` | Default `gpt-5.6-sol` |
 
 `PORT` is set by Railway/Render. SSL is turned on automatically for Neon URLs and for `NODE_ENV=production`.
 

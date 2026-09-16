@@ -108,7 +108,7 @@ function getOpenApi(req, res) {
             200: { description: "Assistant reply and line-by-line thread" },
             400: { description: "message is required" },
             401: { description: "Missing or wrong API key" },
-            503: { description: "Groq is not configured" },
+            503: { description: "OpenAI is not configured" },
           },
         },
       },
