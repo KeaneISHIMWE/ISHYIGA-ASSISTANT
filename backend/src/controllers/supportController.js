@@ -1,40 +1,82 @@
 const supportModel = require("../models/support");
-const { isUuid } = require("../services/dashboardService");
-const { toSupportRecord, toListFilters } = require("../services/supportService");
+const {
+  findAgentRow,
+  normalizeAgentName,
+  parseAgentId,
+  toAgentDetail,
+  toAgentSummary,
+  toAssignedClient,
+  toClientListFilters,
+  toListFilters,
+} = require("../services/supportService");
+
+function readAgentId(req) {
+  return parseAgentId(req.params && req.params.id);
+}
 
 async function listSupport(
   req,
   res,
-  { list = supportModel.list } = {}
+  { listAgents = supportModel.listAgents } = {}
 ) {
-  const rows = await list(toListFilters(req.query || {}));
+  const rows = await listAgents(toListFilters(req.query || {}));
   return res.status(200).json({
-    support: rows.map(toSupportRecord),
+    agents: rows.map((row) => toAgentSummary(row)),
     count: rows.length,
   });
 }
 
-async function getSupport(
+async function loadAgent(
   req,
-  res,
-  { findById = supportModel.findById } = {}
+  {
+    listAgents = supportModel.listAgents,
+    listByAgentKey = supportModel.listByAgentKey,
+  } = {}
 ) {
-  const id = req.params && req.params.id;
-  if (!isUuid(id)) {
-    return res.status(400).json({ error: "Invalid support id" });
+  const id = readAgentId(req);
+  if (!id) {
+    return { error: { status: 400, body: { error: "Invalid support agent id" } } };
   }
 
-  const row = await findById(id);
-  if (!row) {
-    return res.status(404).json({ error: "Support record not found" });
+  const agents = await listAgents();
+  const agent = findAgentRow(agents, id);
+  if (!agent) {
+    return { error: { status: 404, body: { error: "Support agent not found" } } };
+  }
+
+  const clients = await listByAgentKey(
+    normalizeAgentName(agent.support_agent),
+    toClientListFilters(req.query || {})
+  );
+
+  return { id, agent, clients };
+}
+
+async function getSupport(req, res, deps = {}) {
+  const result = await loadAgent(req, deps);
+  if (result.error) {
+    return res.status(result.error.status).json(result.error.body);
   }
 
   return res.status(200).json({
-    support: toSupportRecord(row),
+    agent: toAgentDetail(result.agent, result.clients),
+  });
+}
+
+async function listSupportClients(req, res, deps = {}) {
+  const result = await loadAgent(req, deps);
+  if (result.error) {
+    return res.status(result.error.status).json(result.error.body);
+  }
+
+  return res.status(200).json({
+    clients: result.clients.map(toAssignedClient),
+    count: result.clients.length,
   });
 }
 
 module.exports = {
   listSupport,
   getSupport,
+  listSupportClients,
 };

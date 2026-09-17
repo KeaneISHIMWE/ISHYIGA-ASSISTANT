@@ -241,8 +241,73 @@ The import is safe to run again. Existing `source_row` values are updated, not d
 
 ### API
 
-Requires `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
+Requires `Authorization: Bearer <CONVERSATIONS_API_KEY>` or `X-Api-Key`. Missing or wrong key returns `401`. If the key is not configured, these routes return `503`.
 
-- `GET /api/support` — list, with `client`, `agent`, `location`, `sector`, `status`, `approval`, `active`, `contact`, `from`, `to`
-- `GET /api/support/:id` — one record
+Support agents are not a separate table. They are distinct `support_agent` names on imported visit rows. Agent IDs are slugs of that name, for example `uwimanikunda-lucie`. There is no users/employees table, so agent phone and email are not stored and are not returned.
+
+Client contact comes from `support.contact` on each visit row. 151 of 565 imported rows have no contact. WhatsApp `customers` and CARE profiles are a different domain and are not joined here.
+
+- `GET /api/support` — list agents. Query: `search` (or `agent`), `client`, `location`, `sector`, `status`, `approval`, `active`, `contact`, `from`, `to`. Filters keep agents who have at least one matching visit. `clientsCount` is the matching visit count.
+- `GET /api/support/:id` — one agent plus assigned clients. Same visit filters apply to the client list.
+- `GET /api/support/:id/clients` — assigned clients only. Same visit filters, including `status=Done`.
+
+Example:
+
+```bash
+curl -H "Authorization: Bearer $CONVERSATIONS_API_KEY" \
+  "https://<host>/api/support?search=lucie"
+```
+
+```json
+{
+  "agents": [
+    {
+      "id": "uwimanikunda-lucie",
+      "name": "Uwimanikunda lucie",
+      "clientsCount": 44
+    }
+  ],
+  "count": 1
+}
+```
+
+```bash
+curl -H "Authorization: Bearer $CONVERSATIONS_API_KEY" \
+  "https://<host>/api/support/uwimanikunda-lucie"
+```
+
+```json
+{
+  "agent": {
+    "id": "uwimanikunda-lucie",
+    "name": "Uwimanikunda lucie",
+    "clientsCount": 1,
+    "clients": [
+      {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "name": "TRUSTED PHARMACY LIMITED",
+        "location": "KIREHE",
+        "sector": "PHARMACY",
+        "visitAt": "2026-09-16T13:57:00.000Z",
+        "branches": 0,
+        "status": "Done",
+        "approval": "needs_approval",
+        "active": true,
+        "contact": "250789220619"
+      }
+    ]
+  }
+}
+```
+
+Errors:
+
+| Status | Body |
+| --- | --- |
+| 400 | `{ "error": "Invalid support agent id" }` |
+| 401 | `{ "error": "Unauthorized. Send Authorization: Bearer <CONVERSATIONS_API_KEY>." }` |
+| 404 | `{ "error": "Support agent not found" }` |
+| 503 | `{ "error": "Conversations API is locked. CONVERSATIONS_API_KEY is not configured." }` |
+
+An agent with no visit rows cannot exist in this API, because agents are derived from those rows. Unknown slugs return 404. Filters that match no visits return `200` with an empty list.
 

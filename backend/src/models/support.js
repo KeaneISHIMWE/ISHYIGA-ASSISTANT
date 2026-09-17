@@ -82,6 +82,11 @@ function buildFilters({
   };
 }
 
+function withNamedAgents(where) {
+  const named = "btrim(COALESCE(support_agent, '')) <> ''";
+  return where ? `${where} AND ${named}` : `WHERE ${named}`;
+}
+
 async function list(filters = {}) {
   const { where, values } = buildFilters(filters);
   const result = await pool.query(
@@ -89,6 +94,47 @@ async function list(filters = {}) {
       SELECT ${SELECT_COLUMNS}
       FROM support
       ${where}
+      ORDER BY visit_at DESC NULLS LAST, client_name ASC
+    `,
+    values
+  );
+
+  return result.rows;
+}
+
+async function listAgents(filters = {}) {
+  const { where, values } = buildFilters(filters);
+  const result = await pool.query(
+    `
+      SELECT
+        MIN(support_agent) AS support_agent,
+        COUNT(*)::int AS clients_count
+      FROM support
+      ${withNamedAgents(where)}
+      GROUP BY lower(btrim(support_agent))
+      ORDER BY MIN(support_agent) ASC
+    `,
+    values
+  );
+
+  return result.rows;
+}
+
+async function listByAgentKey(agentKey, filters = {}) {
+  const key = String(agentKey || "").trim();
+  if (!key) {
+    return [];
+  }
+
+  const { where, values } = buildFilters(filters);
+  values.push(key);
+  const agentClause = `lower(btrim(support_agent)) = $${values.length}`;
+  const fullWhere = where ? `${where} AND ${agentClause}` : `WHERE ${agentClause}`;
+  const result = await pool.query(
+    `
+      SELECT ${SELECT_COLUMNS}
+      FROM support
+      ${fullWhere}
       ORDER BY visit_at DESC NULLS LAST, client_name ASC
     `,
     values
@@ -166,6 +212,8 @@ async function count() {
 
 module.exports = {
   list,
+  listAgents,
+  listByAgentKey,
   findById,
   upsert,
   count,

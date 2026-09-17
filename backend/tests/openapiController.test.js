@@ -49,6 +49,7 @@ describe("openapiController", () => {
     assert.ok(res.body.paths["/api/conversations/{conversationId}"]);
     assert.ok(res.body.paths["/api/dashboard"]);
     assert.ok(res.body.paths["/api/support"]);
-    assert.ok(res.body.paths["/api/support/{supportId}"]);
+    assert.ok(res.body.paths["/api/support/{agentId}"]);
+    assert.ok(res.body.paths["/api/support/{agentId}/clients"]);
   });
 });

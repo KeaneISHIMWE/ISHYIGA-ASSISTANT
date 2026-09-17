@@ -140,38 +140,76 @@ function getOpenApi(req, res) {
       },
       "/api/support": {
         get: {
-          summary: "List support visits",
+          summary: "List support agents",
           description:
-            "Returns imported WOLF support visits. Filter by client, agent, location, sector, status, approval, contact, or visit date.",
+            "Returns distinct support agents derived from imported WOLF visits. Filter by agent name (search), client, location, sector, status, approval, active, contact, or visit date.",
           parameters: [
-            { name: "client", in: "query", schema: { type: "string" } },
+            { name: "search", in: "query", schema: { type: "string" } },
             { name: "agent", in: "query", schema: { type: "string" } },
+            { name: "client", in: "query", schema: { type: "string" } },
             { name: "location", in: "query", schema: { type: "string" } },
+            { name: "sector", in: "query", schema: { type: "string" } },
             { name: "status", in: "query", schema: { type: "string" } },
+            { name: "approval", in: "query", schema: { type: "string" } },
+            { name: "active", in: "query", schema: { type: "string" } },
             { name: "from", in: "query", schema: { type: "string", format: "date" } },
             { name: "to", in: "query", schema: { type: "string", format: "date" } },
           ],
           responses: {
-            200: { description: "Support visit list" },
+            200: { description: "Support agent list" },
             401: { description: "Missing or wrong API key" },
           },
         },
       },
-      "/api/support/{supportId}": {
+      "/api/support/{agentId}": {
         get: {
-          summary: "Get one support visit",
+          summary: "Get one support agent and assigned clients",
           parameters: [
             {
-              name: "supportId",
+              name: "agentId",
               in: "path",
               required: true,
-              schema: { type: "string", format: "uuid" },
+              schema: { type: "string" },
             },
+            { name: "client", in: "query", schema: { type: "string" } },
+            { name: "location", in: "query", schema: { type: "string" } },
+            { name: "sector", in: "query", schema: { type: "string" } },
+            { name: "status", in: "query", schema: { type: "string" } },
+            { name: "approval", in: "query", schema: { type: "string" } },
+            { name: "active", in: "query", schema: { type: "string" } },
+            { name: "from", in: "query", schema: { type: "string", format: "date" } },
+            { name: "to", in: "query", schema: { type: "string", format: "date" } },
           ],
           responses: {
-            200: { description: "Support visit" },
-            400: { description: "Invalid support id" },
-            404: { description: "Support record not found" },
+            200: { description: "Support agent with assigned clients" },
+            400: { description: "Invalid support agent id" },
+            404: { description: "Support agent not found" },
+          },
+        },
+      },
+      "/api/support/{agentId}/clients": {
+        get: {
+          summary: "List clients assigned to a support agent",
+          parameters: [
+            {
+              name: "agentId",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+            { name: "client", in: "query", schema: { type: "string" } },
+            { name: "location", in: "query", schema: { type: "string" } },
+            { name: "sector", in: "query", schema: { type: "string" } },
+            { name: "status", in: "query", schema: { type: "string" } },
+            { name: "approval", in: "query", schema: { type: "string" } },
+            { name: "active", in: "query", schema: { type: "string" } },
+            { name: "from", in: "query", schema: { type: "string", format: "date" } },
+            { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          ],
+          responses: {
+            200: { description: "Assigned client list" },
+            400: { description: "Invalid support agent id" },
+            404: { description: "Support agent not found" },
           },
         },
       },
