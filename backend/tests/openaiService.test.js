@@ -291,6 +291,37 @@ describe("generateReply", () => {
     assert.equal(result.escalationRequest.priority, "high");
   });
 
+  it("does not escalate a greeting-only message", async () => {
+    const result = await generateReply({
+      message: "Hello",
+      client: fakeClient(async () => ({
+        choices: [
+          {
+            message: {
+              content: "",
+              tool_calls: [
+                {
+                  function: {
+                    name: "escalate_to_support",
+                    arguments: JSON.stringify({
+                      summary: "Unrecognized contact",
+                      why: "Number is not in CARE",
+                      reason: "unregistered_contact",
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.escalationRequest, null);
+  });
+
   it("sends the client record inside the system prompt", async () => {
     let systemContent = "";
     const result = await generateReply({

@@ -66,6 +66,22 @@ describe("escalation helpers", () => {
       shouldEscalate({ generated: { ok: true, reply: "How can I help?" } }),
       false
     );
+    assert.equal(
+      shouldEscalate({
+        message: "Hello",
+        generated: { ok: true, escalationRequest: { summary: "Unknown number" } },
+        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "Hello",
+        generated: { ok: false, reply: "Hello 👋" },
+        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      }),
+      false
+    );
   });
 });
 

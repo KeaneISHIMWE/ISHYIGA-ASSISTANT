@@ -3,6 +3,8 @@ const {
   generateReply,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
+  GREETING_REPLY,
+  isGreetingOnly,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const { createTicket } = require("../services/ticketService");
@@ -321,7 +323,19 @@ async function processTextEvents(
       };
     }
 
-    if (shouldEscalate({ generated, clientContext })) {
+    if (
+      event.kind === "text" &&
+      isGreetingOnly(event.message) &&
+      (!generated.reply || generated.reply === ESCALATION_REPLY)
+    ) {
+      generated = {
+        ...generated,
+        reply: GREETING_REPLY,
+        escalationRequest: null,
+      };
+    }
+
+    if (shouldEscalate({ generated, clientContext, message: event.message })) {
       const request = generated.escalationRequest || {};
       try {
         const escalated = await escalateFn({

@@ -6,7 +6,7 @@ const supportModel = require("../models/support");
 const escalationModel = require("../models/escalation");
 const { createTicket } = require("./ticketService");
 const { sendTextMessage } = require("./whatsappService");
-const { ESCALATION_REPLY } = require("./openaiService");
+const { ESCALATION_REPLY, isGreetingOnly } = require("./openaiService");
 
 const FELLOW_SUPPORT_REPLY =
   "Let me inform my fellow support about this issue so they can assist you.";
@@ -366,7 +366,11 @@ async function resolveByAgent({
   };
 }
 
-function shouldEscalate({ generated, clientContext } = {}) {
+function shouldEscalate({ generated, clientContext, message } = {}) {
+  if (isGreetingOnly(message)) {
+    return false;
+  }
+
   if (generated && generated.escalationRequest) {
     return true;
   }

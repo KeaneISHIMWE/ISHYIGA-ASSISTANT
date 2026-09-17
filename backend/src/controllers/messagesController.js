@@ -1,6 +1,11 @@
 const { randomUUID } = require("node:crypto");
 const { env } = require("../config/env");
-const { generateReply, ESCALATION_REPLY } = require("../services/openaiService");
+const {
+  generateReply,
+  ESCALATION_REPLY,
+  GREETING_REPLY,
+  isGreetingOnly,
+} = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
   escalateToSupport,
@@ -123,7 +128,18 @@ async function createMessage(
     clientContext,
   });
 
-  if (shouldEscalate({ generated, clientContext })) {
+  if (
+    isGreetingOnly(trimmedMessage) &&
+    (!generated.reply || generated.reply === ESCALATION_REPLY)
+  ) {
+    generated = {
+      ...generated,
+      reply: GREETING_REPLY,
+      escalationRequest: null,
+    };
+  }
+
+  if (shouldEscalate({ generated, clientContext, message: trimmedMessage })) {
     const request = generated.escalationRequest || {};
     try {
       const escalated = await escalateFn({

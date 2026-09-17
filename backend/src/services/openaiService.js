@@ -387,6 +387,14 @@ async function generateReply({
     const escalationRequest = extractEscalationRequest(response);
     const text = extractReplyText(response);
 
+    if (isGreetingOnly(trimmedMessage) && !image && escalationRequest) {
+      return {
+        ok: true,
+        reply: text || GREETING_REPLY,
+        escalationRequest: null,
+      };
+    }
+
     if (!text && !escalationRequest) {
       logger.warn("OpenAI response received", { empty: true });
       return failureResult({

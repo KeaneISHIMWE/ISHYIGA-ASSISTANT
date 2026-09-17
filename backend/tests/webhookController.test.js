@@ -661,4 +661,52 @@ describe("processTextEvents", () => {
     assert.equal(results[0].sent, true);
     assert.equal(ticketCalls.length, 0);
   });
+
+  it("does not escalate a greeting from an unregistered number", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.hello",
+          customerNumber: "250792431896",
+          message: "Hello",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+        }),
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: "",
+          escalationRequest: {
+            summary: "Unrecognized contact",
+            why: "Number is not in CARE",
+            reason: "unregistered_contact",
+          },
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, GREETING_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return {
+            ok: false,
+            customerReply: "I couldn't register this request just now. Please try again shortly.",
+          };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, GREETING_REPLY);
+    assert.equal(ticketCalls.length, 0);
+  });
 });
