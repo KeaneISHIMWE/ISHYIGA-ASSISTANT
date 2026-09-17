@@ -320,7 +320,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.reply, "I'm doing well, thank you 😊 How can I help you?");
     assert.equal(result.escalationRequest, null);
   });
 
@@ -443,15 +443,15 @@ describe("resolveFailedCustomerReply", () => {
 
   it("escalates after two consecutive fallbacks", () => {
     const history = [
-      { role: "user", content: "hello" },
+      { role: "user", content: "The invoice failed to post" },
       { role: "assistant", content: FALLBACK_REPLY },
-      { role: "user", content: "hello" },
+      { role: "user", content: "The invoice failed to post" },
       { role: "assistant", content: FALLBACK_REPLY },
-      { role: "user", content: "good morning" },
+      { role: "user", content: "The invoice failed to post" },
     ];
 
     assert.equal(
-      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      resolveFailedCustomerReply(history, FALLBACK_REPLY, "The invoice failed to post"),
       ESCALATION_REPLY
     );
   });
@@ -463,19 +463,27 @@ describe("resolveFailedCustomerReply", () => {
     ];
 
     assert.equal(
-      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      resolveFailedCustomerReply(
+        history,
+        FALLBACK_REPLY,
+        "The invoice failed to post"
+      ),
       ESCALATION_REPLY
     );
   });
 
-  it("answers how-are-you the same way as a greeting", () => {
+  it("answers how-are-you as conversation, not a ticket", () => {
     assert.equal(
       resolveCustomerFacingFailure({ message: "How are you" }),
-      GREETING_REPLY
+      "I'm doing well, thank you 😊 How can I help you?"
     );
     assert.equal(
       resolveCustomerFacingFailure({ message: "amakuru?" }),
-      GREETING_REPLY
+      "Ni meza neza, murakoze 😊 Nabafasha iki?"
+    );
+    assert.equal(
+      resolveCustomerFacingFailure({ message: "Umeze neza?" }),
+      "Yego, meze neza 😊 Murakoze kubaza. Nabafasha iki?"
     );
   });
 

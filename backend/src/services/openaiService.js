@@ -2,11 +2,18 @@ const OpenAI = require("openai");
 const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
+const {
+  classifyIntent,
+  conversationalFallback,
+  isConversationalMessage,
+  isSupportCapableIntent,
+  unknownFallback,
+} = require("./intentService");
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_HISTORY_MESSAGES = 16;
 const FALLBACK_REPLY =
-  "Sorry, I didn't get that properly. Could you please explain it to me again?";
+  "Sorry, I didn't quite understand that. Could you explain what you need help with?";
 const ESCALATION_REPLY =
   "Let me inform my fellow support about this issue so they can assist you.";
 const ESCALATE_TOOL = {
@@ -48,12 +55,10 @@ const ESCALATE_TOOL = {
     },
   },
 };
-const GREETING_REPLY = "Hello 👋";
+const GREETING_REPLY = "Hello 👋 How can I help you today?";
 const UNREGISTERED_IDENTITY_REPLY =
   "Hello 👋 It seems this number isn't registered with us yet. May I know your name and the company you represent?";
 const MAX_CONSECUTIVE_FALLBACKS = 2;
-const GREETING_ONLY_PATTERN =
-  /^(?:hi+|he+l+o+|hey+|yo|hiya|howdy|good\s+(?:morning|afternoon|evening)|bonjour|salut|muraho|amakuru(?:\s+yawe)?|habari(?:\s+yako)?|how\s+are\s+you(?:\s+doing)?|how(?:'s|s| is) it going|what(?:'s|s| is)\s+up|comment\s+(?:allez[\s-]?vous|vas[\s-]?tu))(?:\s+there)?[!?.,\s]*$/i;
 const UNREGISTERED_STATUS_MARKER =
   "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT";
 const IDENTITY_DETAIL_PATTERN =
@@ -154,11 +159,7 @@ function countConsecutiveFailedReplies(history) {
 }
 
 function isGreetingOnly(message) {
-  if (typeof message !== "string") {
-    return false;
-  }
-
-  return GREETING_ONLY_PATTERN.test(message.trim());
+  return isConversationalMessage(message);
 }
 
 function isUnregisteredPrompt(clientContext) {
@@ -169,12 +170,15 @@ function hasIdentityDetails(message) {
   return IDENTITY_DETAIL_PATTERN.test(String(message || ""));
 }
 
-function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY) {
-  if (countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS) {
+function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY, message = "") {
+  if (
+    isSupportCapableIntent(classifyIntent(message)) &&
+    countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS
+  ) {
     return ESCALATION_REPLY;
   }
 
-  return reply || FALLBACK_REPLY;
+  return conversationalFallback(message) || reply || unknownFallback();
 }
 
 function resolveCustomerFacingFailure({
@@ -185,14 +189,14 @@ function resolveCustomerFacingFailure({
   clientContext = "",
 } = {}) {
   if (!hasImage && isGreetingOnly(message)) {
-    return GREETING_REPLY;
+    return conversationalFallback(message) || GREETING_REPLY;
   }
 
   if (!hasImage && isUnregisteredPrompt(clientContext)) {
     return UNREGISTERED_IDENTITY_REPLY;
   }
 
-  return resolveFailedCustomerReply(history, reply);
+  return resolveFailedCustomerReply(history, reply, message);
 }
 
 function failureResult({ message, history, image, error, clientContext }) {
@@ -350,15 +354,19 @@ async function generateReply({
       ? message.trim()
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
+  const intent = classifyIntent(trimmedMessage);
+  const allowTools = hasImage || isSupportCapableIntent(intent);
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {
     model,
     historyCount: safeHistory.length,
     hasImage,
+    intent,
+    toolsEnabled: allowTools,
   });
 
-  const requestCompletion = (historyForRequest, withTools = true) =>
+  const requestCompletion = (historyForRequest, withTools = allowTools) =>
     openai.chat.completions.create(
       {
         model,
@@ -414,9 +422,9 @@ async function generateReply({
     let text = extractReplyText(response);
     const unregistered = isUnregisteredPrompt(clientContext);
     const skipEscalation =
-      !image &&
       Boolean(escalationRequest) &&
-      (isGreetingOnly(trimmedMessage) ||
+      !hasImage &&
+      (!isSupportCapableIntent(intent) ||
         (unregistered && !hasIdentityDetails(trimmedMessage)));
 
     if (skipEscalation) {
@@ -424,10 +432,12 @@ async function generateReply({
         ok: true,
         reply:
           text ||
-          (isGreetingOnly(trimmedMessage)
-            ? GREETING_REPLY
-            : UNREGISTERED_IDENTITY_REPLY),
+          conversationalFallback(trimmedMessage) ||
+          (unregistered && !hasIdentityDetails(trimmedMessage)
+            ? UNREGISTERED_IDENTITY_REPLY
+            : unknownFallback()),
         escalationRequest: null,
+        intent,
       };
     }
 
@@ -475,7 +485,8 @@ async function generateReply({
     return {
       ok: true,
       reply: text || "",
-      escalationRequest,
+      escalationRequest: allowTools ? escalationRequest : null,
+      intent,
     };
   } catch (error) {
     const reason = classifyOpenAIError(error);

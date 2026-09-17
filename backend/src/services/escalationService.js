@@ -11,6 +11,11 @@ const {
   isGreetingOnly,
   hasIdentityDetails,
 } = require("./openaiService");
+const {
+  classifyIntent,
+  INTENTS,
+  isSupportCapableIntent,
+} = require("./intentService");
 
 const FELLOW_SUPPORT_REPLY =
   "Let me inform my fellow support about this issue so they can assist you.";
@@ -375,12 +380,22 @@ async function resolveByAgent({
 }
 
 function shouldEscalate({ generated, clientContext, message } = {}) {
-  if (isGreetingOnly(message)) {
-    return false;
-  }
+  const text = String(message || "").trim();
 
-  if (isUnregisteredContext(clientContext) && !hasIdentityDetails(message)) {
-    return false;
+  if (text) {
+    const intent = classifyIntent(text);
+
+    if (isGreetingOnly(text) || !isSupportCapableIntent(intent)) {
+      return false;
+    }
+
+    if (isUnregisteredContext(clientContext) && !hasIdentityDetails(text)) {
+      return false;
+    }
+
+    if (intent === INTENTS.SUPPORT_REQUEST) {
+      return true;
+    }
   }
 
   if (generated && generated.escalationRequest) {

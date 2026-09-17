@@ -3,9 +3,13 @@ const { env } = require("../config/env");
 const {
   generateReply,
   ESCALATION_REPLY,
-  GREETING_REPLY,
-  isGreetingOnly,
+  FALLBACK_REPLY,
 } = require("../services/openaiService");
+const {
+  classifyIntent,
+  conversationalFallback,
+  isConversationalIntent,
+} = require("../services/intentService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
 const {
   escalateToSupport,
@@ -128,15 +132,23 @@ async function createMessage(
     clientContext,
   });
 
-  if (
-    isGreetingOnly(trimmedMessage) &&
-    (!generated.reply || generated.reply === ESCALATION_REPLY)
-  ) {
+  const intent = classifyIntent(trimmedMessage);
+  if (isConversationalIntent(intent)) {
     generated = {
       ...generated,
-      reply: GREETING_REPLY,
       escalationRequest: null,
     };
+    if (
+      !generated.ok ||
+      !generated.reply ||
+      generated.reply === ESCALATION_REPLY ||
+      generated.reply === FALLBACK_REPLY
+    ) {
+      generated = {
+        ...generated,
+        reply: conversationalFallback(trimmedMessage) || generated.reply,
+      };
+    }
   }
 
   if (shouldEscalate({ generated, clientContext, message: trimmedMessage })) {
@@ -174,6 +186,21 @@ async function createMessage(
       reply: generated.reply,
     });
   }
+
+  logger.info("Conversation route decided", {
+    messageId: inboundId,
+    conversationId,
+    message: trimmedMessage.slice(0, 160),
+    detectedIntent: intent,
+    conversationState: conversationId ? "open" : "none",
+    supportRequired: shouldEscalate({
+      generated,
+      clientContext,
+      message: trimmedMessage,
+    }),
+    toolCalled: Boolean(generated.escalationRequest),
+    finalResponse: generated.reply ? String(generated.reply).slice(0, 160) : null,
+  });
 
   return res.status(200).json({
     ok: generated.ok,

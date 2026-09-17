@@ -3,10 +3,13 @@ const {
   generateReply,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
-  GREETING_REPLY,
-  isGreetingOnly,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
+const {
+  classifyIntent,
+  conversationalFallback,
+  isConversationalIntent,
+} = require("../services/intentService");
 const { createTicket } = require("../services/ticketService");
 const {
   escalateToSupport,
@@ -324,22 +327,36 @@ async function processTextEvents(
       };
     }
 
-    if (
-      event.kind === "text" &&
-      isGreetingOnly(event.message) &&
-      (!generated.reply || generated.reply === ESCALATION_REPLY)
-    ) {
+    const intent = classifyIntent(event.message);
+    const supportRequired = shouldEscalate({
+      generated,
+      clientContext,
+      message: event.message,
+    });
+
+    if (event.kind === "text" && isConversationalIntent(intent)) {
       generated = {
         ...generated,
-        reply: GREETING_REPLY,
         escalationRequest: null,
       };
+      if (
+        !generated.ok ||
+        !generated.reply ||
+        generated.reply === ESCALATION_REPLY ||
+        generated.reply === FALLBACK_REPLY
+      ) {
+        generated = {
+          ...generated,
+          reply: conversationalFallback(event.message) || generated.reply,
+        };
+      }
     }
 
-    if (shouldEscalate({ generated, clientContext, message: event.message })) {
+    let escalated = null;
+    if (supportRequired) {
       const request = generated.escalationRequest || {};
       try {
-        const escalated = await escalateFn({
+        escalated = await escalateFn({
           conversationId: inbound.conversationId,
           customerNumber: event.customerNumber,
           message: event.message,
@@ -374,9 +391,32 @@ async function processTextEvents(
       }
     }
 
+    logger.info("Conversation route decided", {
+      messageId: event.messageId,
+      customer: maskPhoneNumber(event.customerNumber),
+      conversationId: inbound.conversationId || null,
+      message: String(event.message || "").slice(0, 160),
+      detectedIntent: intent,
+      conversationState: "open",
+      supportRequired,
+      supportAgentId:
+        (escalated && (escalated.agentId || escalated.agentName)) || null,
+      toolCalled: Boolean(generated.escalationRequest),
+      toolResult:
+        escalated && escalated.ok
+          ? "ok"
+          : escalated && escalated.error
+            ? String(escalated.error).slice(0, 80)
+            : null,
+      finalResponse: generated.reply
+        ? String(generated.reply).slice(0, 160)
+        : null,
+    });
+
     logger.info("OpenAI reply generated", {
       ok: generated.ok,
       error: generated.error || null,
+      intent,
     });
 
     await waitForTypingWindow(typingStartedAt, typingMinVisibleMs, nowFn, sleepFn);

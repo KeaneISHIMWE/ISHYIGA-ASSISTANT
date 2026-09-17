@@ -736,7 +736,7 @@ describe("processTextEvents", () => {
           escalationRequest: { summary: "Unknown number" },
         }),
         sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, GREETING_REPLY);
+          assert.equal(body, "I'm doing well, thank you 😊 How can I help you?");
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
@@ -748,7 +748,7 @@ describe("processTextEvents", () => {
       }
     );
 
-    assert.equal(results[0].reply, GREETING_REPLY);
+    assert.equal(results[0].reply, "I'm doing well, thank you 😊 How can I help you?");
     assert.equal(ticketCalls.length, 0);
   });
 
@@ -791,5 +791,129 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].reply, UNREGISTERED_IDENTITY_REPLY);
     assert.equal(ticketCalls.length, 0);
+  });
+
+  it("answers Muraho and Umeze neza without opening a ticket", async () => {
+    const ticketCalls = [];
+    const replies = [];
+
+    for (const message of ["Muraho", "Amakuru yawe?", "Umeze neza?"]) {
+      const results = await processTextEvents(
+        [
+          {
+            kind: "text",
+            messageId: `wamid.${message}`,
+            customerNumber: "250788000000",
+            message,
+          },
+        ],
+        {
+          typingMinVisibleMs: 0,
+          markReadAndShowTypingFn: async () => ({ ok: true }),
+          persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+          loadHistory: async () => [],
+          generateReplyFn: async () => ({
+            ok: false,
+            reply: FALLBACK_REPLY,
+            error: "api_error",
+          }),
+          sendTextMessageFn: async ({ body }) => {
+            replies.push(body);
+            return { ok: true, outboundId: "wamid.OUT1" };
+          },
+          persistOutbound: async () => ({ ok: true }),
+          escalateFn: async (args) => {
+            ticketCalls.push(args);
+            return { ok: false, customerReply: "I couldn't register this request just now. Please try again shortly." };
+          },
+          findOpenEscalationFn: async () => null,
+        }
+      );
+      assert.equal(results[0].sent, true);
+    }
+
+    assert.match(replies[0], /Muraho/);
+    assert.match(replies[1], /Ni meza neza/);
+    assert.match(replies[2], /Yego, meze neza/);
+    assert.equal(ticketCalls.length, 0);
+  });
+
+  it("does not immediately ticket a POS question", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.posq",
+          customerNumber: "250788000000",
+          message: "I have an issue with my POS",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Demo Shop",
+        }),
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: "What error do you see on the POS?",
+        }),
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true, customerReply: ESCALATION_REPLY };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, "What error do you see on the POS?");
+    assert.equal(ticketCalls.length, 0);
+  });
+
+  it("escalates when the customer asks someone to check a down POS", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.poshelp",
+          customerNumber: "250788000000",
+          message:
+            "My POS is completely not working and I need someone to check it.",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Demo Shop",
+        }),
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: ESCALATION_REPLY,
+          escalationRequest: {
+            summary: "POS completely down",
+            why: "Customer asked someone to check it",
+          },
+        }),
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true, customerReply: ESCALATION_REPLY, agentName: "keanne ishimwe" };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, ESCALATION_REPLY);
+    assert.equal(ticketCalls.length, 1);
   });
 });
