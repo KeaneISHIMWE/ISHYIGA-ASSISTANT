@@ -275,7 +275,7 @@ async function escalateToSupport({
   }
 
   let notified = false;
-  if (notifyNumber && notifyNumber !== toCanonicalWhatsappDigits(customerNumber)) {
+  if (notifyNumber) {
     try {
       const sent = await sendTextMessageFn({
         to: notifyNumber,
