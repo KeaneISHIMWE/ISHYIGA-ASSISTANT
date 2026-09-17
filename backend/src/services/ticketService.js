@@ -234,6 +234,7 @@ async function createTicket({
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
+        "X-Client-Api-Key": apiKey,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -259,15 +260,19 @@ async function createTicket({
       };
     }
 
-    const ticketId =
+    const ticketNumber =
+      body && (body.ticketNumber || body.ticket_number || null);
+    const rawTicketId =
       body && (body.ticketId || body.id || body.ticket_id || null);
+    const ticketId = ticketNumber || rawTicketId || null;
 
     logger.info("Ticket created", {
       reason,
       ticketId: ticketId || "unknown",
+      ticketNumber: ticketNumber || null,
     });
 
-    return { ok: true, ticketId };
+    return { ok: true, ticketId, ticketNumber: ticketNumber || ticketId };
   } catch (error) {
     const timedOut =
       error && (error.name === "TimeoutError" || error.name === "AbortError");

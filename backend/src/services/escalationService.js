@@ -38,7 +38,7 @@ const HIGH_PRIORITY_PATTERN =
 
 function parseCompanyFromContext(clientContext) {
   const text = String(clientContext || "");
-  const match = text.match(/Company name:\s*(.+)/i);
+  const match = text.match(/(?:Company name|- Company|Company):\s*(.+)/i);
   return match ? match[1].trim() : "";
 }
 

@@ -33,10 +33,10 @@ const SMALL_TALK_PATTERN =
   /^(?:how\s+are\s+you(?:\s+doing)?|how(?:'s|s| is) it going|what(?:'s|s| is)\s+up|amakuru(?:\s+yawe)?|umeze\s+(?:neza|ute)|ni\s+gute|ndabaho|comment\s+(?:allez[\s-]?vous|vas[\s-]?tu)|c(?:'|a)?est\s+comment)[!?.,\s]*$/i;
 
 const TECHNICAL_PATTERN =
-  /\b(pos|ebm|rra|stock|inventory|printer|invoice|receipt|login|password|ntikora|ntikora|ikibazo|not working|doesn't work|does not work|down|error|crash|offline|yanjye)\b/i;
+  /\b(pos|ebm|rra|stock|inventory|printer|invoice|receipt|login|password|ntikora|ikibazo|not working|doesn't work|does not work|down|error|crash|offline|yanjye|system|software|application|app|server|database|screen|blocked|stuck|freeze|frozen|slow|broken|fail|failed|failure|gucuruza|imashini|inyemezabuguzi|ntabwo ikora|hafashwe|yahagaze)\b/i;
 
 const EXPLICIT_SUPPORT_PATTERN =
-  /\b(need someone|need (a )?technician|need support|need (an? )?agent|send (an? )?(agent|technician)|come (and )?(fix|check)|check it|talk to support|speak (to|with) support|nshaka umuntu|ndakeneye umuntu|mfasha|nshaka ubufasha)\b/i;
+  /\b(need someone|need (a )?technician|need support|need (an? )?agent|need (an? )?assistant|send (an? )?(agent|technician|someone)|come (and )?(fix|check)|check it|talk to support|speak (to|with) support|talk to (a )?human|talk to someone|need help|please help|nshaka umuntu|ndakeneye umuntu|mfasha|nshaka ubufasha|murangoboka|ndabakeneye)\b/i;
 
 const ACCOUNT_PATTERN =
   /\b(add (a )?user|remove (a )?user|permission|password reset|account (locked|access)|user account)\b/i;
@@ -121,7 +121,7 @@ function classifyIntent(message) {
 }
 
 function isSupportCapableIntent(intent) {
-  return SUPPORT_CAPABLE_INTENTS.has(intent);
+  return !CONVERSATIONAL_INTENTS.has(intent);
 }
 
 function isConversationalIntent(intent) {

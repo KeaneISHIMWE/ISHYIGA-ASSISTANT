@@ -126,11 +126,8 @@ describe("createTicket", () => {
       clientContext: "CONTACT STATUS: KNOWN CUSTOMER\n- Company: Demo",
       fetchFn: async (url, options) => {
         // Verify the correct auth header is sent
-        assert.equal(
-          options.headers["X-Client-Api-Key"],
-          options.headers["X-Client-Api-Key"] // just verify it exists
-        );
         assert.ok(options.headers["X-Client-Api-Key"] !== undefined);
+        assert.ok(options.headers["Authorization"] !== undefined);
 
         const body = JSON.parse(options.body);
         assert.equal(body.source, "whatsapp_ai");
@@ -144,8 +141,32 @@ describe("createTicket", () => {
       },
     });
 
-    // Will be not_configured if no key in env, or ok:true if key is set
-    assert.ok(result.ok === false || result.ok === true);
+    assert.equal(result.ok, true);
+    assert.equal(result.ticketId, "TKT-001");
+  });
+
+  it("extracts ticketNumber when provided by CARE ticket API", async () => {
+    const result = await createTicket({
+      reason: "support_required",
+      customerNumber: "250788000000",
+      message: "POS is down",
+      fetchFn: async (_url, options) => {
+        assert.ok(options.headers["Authorization"] !== undefined);
+        assert.ok(options.headers["X-Client-Api-Key"] !== undefined);
+        return {
+          ok: true,
+          json: async () => ({
+            ticketNumber: "CARE-1789647007537",
+            ticketId: "ff92582e-bf10-497f-b1be-4f5ed3e34257",
+            message: "Ticket created.",
+          }),
+        };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.ticketId, "CARE-1789647007537");
+    assert.equal(result.ticketNumber, "CARE-1789647007537");
   });
 
   it("returns ok:false when the API responds with 401", async () => {
