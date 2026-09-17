@@ -138,6 +138,43 @@ function getOpenApi(req, res) {
           },
         },
       },
+      "/api/support": {
+        get: {
+          summary: "List support visits",
+          description:
+            "Returns imported WOLF support visits. Filter by client, agent, location, sector, status, approval, contact, or visit date.",
+          parameters: [
+            { name: "client", in: "query", schema: { type: "string" } },
+            { name: "agent", in: "query", schema: { type: "string" } },
+            { name: "location", in: "query", schema: { type: "string" } },
+            { name: "status", in: "query", schema: { type: "string" } },
+            { name: "from", in: "query", schema: { type: "string", format: "date" } },
+            { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          ],
+          responses: {
+            200: { description: "Support visit list" },
+            401: { description: "Missing or wrong API key" },
+          },
+        },
+      },
+      "/api/support/{supportId}": {
+        get: {
+          summary: "Get one support visit",
+          parameters: [
+            {
+              name: "supportId",
+              in: "path",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            200: { description: "Support visit" },
+            400: { description: "Invalid support id" },
+            404: { description: "Support record not found" },
+          },
+        },
+      },
     },
   });
 }

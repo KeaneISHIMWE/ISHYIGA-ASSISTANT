@@ -195,3 +195,54 @@ In Meta → WhatsApp → Configuration, set the callback URL to:
 `https://<your-host>/webhook`
 
 Use the same verify token as `WHATSAPP_VERIFY_TOKEN`. Subscribe to `messages`. After that, ngrok is no longer needed.
+
+## Support visits
+
+`support` is a separate table from WhatsApp `customers`. It stores WOLF admin client visits imported from Excel. There is no foreign key to `customers`, because those rows are WhatsApp numbers, not the Excel client list.
+
+### Table
+
+| Column | Type | Source |
+| --- | --- | --- |
+| `id` | UUID | Generated |
+| `source_row` | integer, unique | Excel `#` |
+| `client_name` | text | Client Name |
+| `support_agent` | text, nullable | Support Agent |
+| `location` | text, nullable | Location |
+| `sector` | text, nullable | Sector |
+| `visit_at` | timestamptz, nullable | Visit Date (`No date set` → null) |
+| `branches` | integer | Branches |
+| `status` | text | Status |
+| `approval` | text | Approval |
+| `active` | boolean | Active / Inactive |
+| `contact` | text, nullable | contact |
+
+Duplicates are blocked by `source_row` and by `client_name + support_agent + visit_at`.
+
+### Import
+
+```bash
+cd backend
+npm run db:migrate
+npm run db:import-support
+```
+
+Default file: `docs/WOLF_Admin_Clients_September_contacts_filled.xlsx`  
+Default sheet: `WOLF_Admin_Clients_September_20`
+
+Optional:
+
+```
+SUPPORT_EXCEL_PATH=
+SUPPORT_EXCEL_SHEET=
+```
+
+The import is safe to run again. Existing `source_row` values are updated, not duplicated. Empty cells, replacement-character locations, and `No date set` are stored as null. Those rows are imported and listed as warnings, not dropped.
+
+### API
+
+Requires `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
+
+- `GET /api/support` — list, with `client`, `agent`, `location`, `sector`, `status`, `approval`, `active`, `contact`, `from`, `to`
+- `GET /api/support/:id` — one record
+

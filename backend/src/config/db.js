@@ -17,7 +17,7 @@ pool.on("error", (error) => {
   });
 });
 
-const REQUIRED_TABLES = ["customers", "conversations", "messages"];
+const REQUIRED_TABLES = ["customers", "conversations", "messages", "support"];
 
 async function checkDatabaseConnection() {
   try {
@@ -64,6 +64,7 @@ async function checkDatabaseSchema() {
         customers: false,
         conversations: false,
         messages: false,
+        support: false,
       },
     };
   }
