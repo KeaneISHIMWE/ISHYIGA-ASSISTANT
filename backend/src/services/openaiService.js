@@ -14,7 +14,7 @@ const ESCALATE_TOOL = {
   function: {
     name: "escalate_to_support",
     description:
-      "Start the internal support escalation workflow when a support agent must take action. Use this for registration/verification, account changes, billing, POS/RRA/technical intervention, explicit support requests, or any issue you cannot safely resolve yourself.",
+      "Start the internal support escalation workflow only when a support agent must take action on a concrete issue. Do not use this for greetings, small talk, or the first identity-discovery turn with an unregistered number.",
     parameters: {
       type: "object",
       properties: {
@@ -49,9 +49,15 @@ const ESCALATE_TOOL = {
   },
 };
 const GREETING_REPLY = "Hello 👋";
+const UNREGISTERED_IDENTITY_REPLY =
+  "Hello 👋 It seems this number isn't registered with us yet. May I know your name and the company you represent?";
 const MAX_CONSECUTIVE_FALLBACKS = 2;
 const GREETING_ONLY_PATTERN =
-  /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|bonjour|salut|muraho|habari)(?:\s+there)?[!.,\s]*$/i;
+  /^(?:hi+|he+l+o+|hey+|yo|hiya|howdy|good\s+(?:morning|afternoon|evening)|bonjour|salut|muraho|amakuru(?:\s+yawe)?|habari(?:\s+yako)?|how\s+are\s+you(?:\s+doing)?|how(?:'s|s| is) it going|what(?:'s|s| is)\s+up|comment\s+(?:allez[\s-]?vous|vas[\s-]?tu))(?:\s+there)?[!?.,\s]*$/i;
+const UNREGISTERED_STATUS_MARKER =
+  "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT";
+const IDENTITY_DETAIL_PATTERN =
+  /\b(ltd|limited|pharmacy|sarl|inc\.?|company|clinic|shop|store|hotel|school|hospital|i(?:'m| am)|my name is|nitwa|nziwa|twitwa)\b/i;
 
 function createClient(apiKey) {
   return new OpenAI({
@@ -155,6 +161,14 @@ function isGreetingOnly(message) {
   return GREETING_ONLY_PATTERN.test(message.trim());
 }
 
+function isUnregisteredPrompt(clientContext) {
+  return String(clientContext || "").includes(UNREGISTERED_STATUS_MARKER);
+}
+
+function hasIdentityDetails(message) {
+  return IDENTITY_DETAIL_PATTERN.test(String(message || ""));
+}
+
 function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY) {
   if (countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS) {
     return ESCALATION_REPLY;
@@ -168,21 +182,27 @@ function resolveCustomerFacingFailure({
   history,
   hasImage = false,
   reply = FALLBACK_REPLY,
+  clientContext = "",
 } = {}) {
   if (!hasImage && isGreetingOnly(message)) {
     return GREETING_REPLY;
   }
 
+  if (!hasImage && isUnregisteredPrompt(clientContext)) {
+    return UNREGISTERED_IDENTITY_REPLY;
+  }
+
   return resolveFailedCustomerReply(history, reply);
 }
 
-function failureResult({ message, history, image, error }) {
+function failureResult({ message, history, image, error, clientContext }) {
   return {
     ok: false,
     reply: resolveCustomerFacingFailure({
       message,
       history,
       hasImage: Boolean(image && image.dataUrl),
+      clientContext,
     }),
     error,
   };
@@ -306,6 +326,7 @@ async function generateReply({
       history,
       image,
       error: "Missing message",
+      clientContext,
     });
   }
 
@@ -320,6 +341,7 @@ async function generateReply({
       history,
       image,
       error: "OpenAI is not configured",
+      clientContext,
     });
   }
 
@@ -371,38 +393,71 @@ async function generateReply({
       const reason = classifyOpenAIError(error);
       logFailure(error, reason);
 
-      if (!shouldRetryWithoutHistory(reason, safeHistory.length)) {
+      if (shouldRetryWithoutHistory(reason, safeHistory.length)) {
+        logger.warn("OpenAI request retrying without history", { reason });
+        response = await requestCompletion([]);
+      } else if (reason === "api_error" || reason === "timeout") {
+        logger.warn("OpenAI request retrying without tools", { reason });
+        response = await requestCompletion(safeHistory, false);
+      } else {
         return failureResult({
           message: trimmedMessage,
           history: safeHistory,
           image,
           error: reason,
+          clientContext,
         });
       }
-
-      logger.warn("OpenAI request retrying without history", { reason });
-      response = await requestCompletion([]);
     }
 
-    const escalationRequest = extractEscalationRequest(response);
-    const text = extractReplyText(response);
+    let escalationRequest = extractEscalationRequest(response);
+    let text = extractReplyText(response);
+    const unregistered = isUnregisteredPrompt(clientContext);
+    const skipEscalation =
+      !image &&
+      Boolean(escalationRequest) &&
+      (isGreetingOnly(trimmedMessage) ||
+        (unregistered && !hasIdentityDetails(trimmedMessage)));
 
-    if (isGreetingOnly(trimmedMessage) && !image && escalationRequest) {
+    if (skipEscalation) {
       return {
         ok: true,
-        reply: text || GREETING_REPLY,
+        reply:
+          text ||
+          (isGreetingOnly(trimmedMessage)
+            ? GREETING_REPLY
+            : UNREGISTERED_IDENTITY_REPLY),
         escalationRequest: null,
       };
     }
 
     if (!text && !escalationRequest) {
       logger.warn("OpenAI response received", { empty: true });
-      return failureResult({
-        message: trimmedMessage,
-        history: safeHistory,
-        image,
-        error: "Empty model response",
-      });
+      try {
+        response = await requestCompletion(safeHistory, false);
+        text = extractReplyText(response);
+        escalationRequest = extractEscalationRequest(response);
+      } catch (retryError) {
+        const retryReason = classifyOpenAIError(retryError);
+        logFailure(retryError, retryReason);
+        return failureResult({
+          message: trimmedMessage,
+          history: safeHistory,
+          image,
+          error: retryReason,
+          clientContext,
+        });
+      }
+
+      if (!text && !escalationRequest) {
+        return failureResult({
+          message: trimmedMessage,
+          history: safeHistory,
+          image,
+          error: "Empty model response",
+          clientContext,
+        });
+      }
     }
 
     logger.info("OpenAI response received", {
@@ -430,6 +485,7 @@ async function generateReply({
       history: safeHistory,
       image,
       error: reason,
+      clientContext,
     });
   }
 }
@@ -443,8 +499,10 @@ module.exports = {
   ESCALATION_REPLY,
   extractEscalationRequest,
   GREETING_REPLY,
+  UNREGISTERED_IDENTITY_REPLY,
   MAX_CONSECUTIVE_FALLBACKS,
   isGreetingOnly,
+  hasIdentityDetails,
   resolveFailedCustomerReply,
   resolveCustomerFacingFailure,
   SYSTEM_PROMPT,

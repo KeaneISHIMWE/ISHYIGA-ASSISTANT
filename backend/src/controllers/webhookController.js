@@ -319,6 +319,7 @@ async function processTextEvents(
           history,
           hasImage: event.kind === "image",
           reply: generated.reply,
+          clientContext,
         }),
       };
     }
@@ -357,11 +358,6 @@ async function processTextEvents(
 
         if (escalated && escalated.customerReply) {
           if (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY) {
-            generated = {
-              ...generated,
-              reply: escalated.customerReply,
-            };
-          } else if (!escalated.ok) {
             generated = {
               ...generated,
               reply: escalated.customerReply,

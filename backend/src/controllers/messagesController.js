@@ -156,7 +156,7 @@ async function createMessage(
         priority: request.priority,
       });
       if (escalated && escalated.customerReply) {
-        if (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY || !escalated.ok) {
+        if (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY) {
           generated = {
             ...generated,
             reply: escalated.customerReply,

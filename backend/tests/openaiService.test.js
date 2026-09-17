@@ -7,6 +7,7 @@ const {
   FALLBACK_REPLY,
   ESCALATION_REPLY,
   GREETING_REPLY,
+  UNREGISTERED_IDENTITY_REPLY,
   resolveFailedCustomerReply,
   resolveCustomerFacingFailure,
   SYSTEM_PROMPT,
@@ -291,6 +292,70 @@ describe("generateReply", () => {
     assert.equal(result.escalationRequest.priority, "high");
   });
 
+  it("does not escalate small talk from an unregistered number", async () => {
+    const result = await generateReply({
+      message: "How are you",
+      clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      client: fakeClient(async () => ({
+        choices: [
+          {
+            message: {
+              content: "",
+              tool_calls: [
+                {
+                  function: {
+                    name: "escalate_to_support",
+                    arguments: JSON.stringify({
+                      summary: "Unrecognized contact",
+                      why: "Number is not in CARE",
+                      reason: "unregistered_contact",
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.escalationRequest, null);
+  });
+
+  it("asks an unregistered contact who they are instead of escalating", async () => {
+    const result = await generateReply({
+      message: "I have issues on pos",
+      clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      client: fakeClient(async () => ({
+        choices: [
+          {
+            message: {
+              content: "",
+              tool_calls: [
+                {
+                  function: {
+                    name: "escalate_to_support",
+                    arguments: JSON.stringify({
+                      summary: "POS issue",
+                      why: "Unregistered number",
+                      reason: "unregistered_contact",
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reply, UNREGISTERED_IDENTITY_REPLY);
+    assert.equal(result.escalationRequest, null);
+  });
+
   it("does not escalate a greeting-only message", async () => {
     const result = await generateReply({
       message: "Hello",
@@ -400,6 +465,27 @@ describe("resolveFailedCustomerReply", () => {
     assert.equal(
       resolveFailedCustomerReply(history, FALLBACK_REPLY),
       ESCALATION_REPLY
+    );
+  });
+
+  it("answers how-are-you the same way as a greeting", () => {
+    assert.equal(
+      resolveCustomerFacingFailure({ message: "How are you" }),
+      GREETING_REPLY
+    );
+    assert.equal(
+      resolveCustomerFacingFailure({ message: "amakuru?" }),
+      GREETING_REPLY
+    );
+  });
+
+  it("asks an unregistered contact for their company when OpenAI fails", () => {
+    assert.equal(
+      resolveCustomerFacingFailure({
+        message: "I have issues on pos",
+        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      }),
+      UNREGISTERED_IDENTITY_REPLY
     );
   });
 

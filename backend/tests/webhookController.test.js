@@ -10,6 +10,7 @@ const {
   FALLBACK_REPLY,
   ESCALATION_REPLY,
   GREETING_REPLY,
+  UNREGISTERED_IDENTITY_REPLY,
 } = require("../src/services/openaiService");
 
 describe("generateRepliesForInboundEvents", () => {
@@ -707,6 +708,88 @@ describe("processTextEvents", () => {
     );
 
     assert.equal(results[0].reply, GREETING_REPLY);
+    assert.equal(ticketCalls.length, 0);
+  });
+
+  it("greets how-are-you instead of opening a ticket", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.how",
+          customerNumber: "250792431896",
+          message: "How are you",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+        }),
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: "",
+          escalationRequest: { summary: "Unknown number" },
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, GREETING_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: false, customerReply: "I couldn't register this request just now. Please try again shortly." };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, GREETING_REPLY);
+    assert.equal(ticketCalls.length, 0);
+  });
+
+  it("asks an unregistered contact who they are when the model fails", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.pos",
+          customerNumber: "250792431896",
+          message: "I have issues on pos",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+        }),
+        generateReplyFn: async () => ({
+          ok: false,
+          reply: FALLBACK_REPLY,
+          error: "api_error",
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, UNREGISTERED_IDENTITY_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: false, customerReply: "I couldn't register this request just now. Please try again shortly." };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, UNREGISTERED_IDENTITY_REPLY);
     assert.equal(ticketCalls.length, 0);
   });
 });

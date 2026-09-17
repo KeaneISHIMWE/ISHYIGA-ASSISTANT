@@ -82,6 +82,30 @@ describe("escalation helpers", () => {
       }),
       false
     );
+    assert.equal(
+      shouldEscalate({
+        message: "How are you",
+        generated: { ok: true, escalationRequest: { summary: "Unknown number" } },
+        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "i want your help",
+        generated: { ok: true, escalationRequest: { summary: "Customer asked for help" } },
+        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "POS is down at keanne pharmacy",
+        generated: { ok: true, escalationRequest: { summary: "POS down" } },
+        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+      }),
+      true
+    );
   });
 });
 
@@ -150,17 +174,34 @@ describe("escalateToSupport", () => {
     assert.equal(result.customerReply, FELLOW_SUPPORT_ALREADY_OPEN);
   });
 
-  it("does not tell the customer the request was registered when VIBE fails", async () => {
-    const result = await escalateToSupport({
-      customerNumber: "250788000000",
-      message: "Need help",
-      findOpenByIssueFn: async () => null,
-      findAssignedAgentFn: async () => null,
-      createTicketFn: async () => ({ ok: false, error: "http_500" }),
-    });
+  it("still notifies the agent when VIBE ticket creation fails", async () => {
+    const previousNotify = env.supportNotifyWhatsapp;
+    env.supportNotifyWhatsapp = "+250792431896";
+    const messages = [];
+    let result;
+    try {
+      result = await escalateToSupport({
+        customerNumber: "250788000000",
+        message: "Need help",
+        findOpenByIssueFn: async () => null,
+        findAssignedAgentFn: async () => ({ support_agent: "keanne ishimwe" }),
+        createTicketFn: async () => ({ ok: false, error: "not_configured" }),
+        createEscalationFn: async (row) => ({ id: "esc-2", ...row }),
+        updateEscalationFn: async () => ({ id: "esc-2" }),
+        sendTextMessageFn: async (payload) => {
+          messages.push(payload);
+          return { ok: true, outboundId: "wamid.1" };
+        },
+      });
+    } finally {
+      env.supportNotifyWhatsapp = previousNotify;
+    }
 
-    assert.equal(result.ok, false);
-    assert.equal(result.customerReply, FELLOW_SUPPORT_FAILED);
+    assert.equal(result.ok, true);
+    assert.equal(result.ticketCreated, false);
+    assert.equal(result.notified, true);
+    assert.equal(result.customerReply, FELLOW_SUPPORT_REPLY);
+    assert.equal(messages.length, 1);
   });
 });
 

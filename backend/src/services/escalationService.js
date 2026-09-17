@@ -6,7 +6,11 @@ const supportModel = require("../models/support");
 const escalationModel = require("../models/escalation");
 const { createTicket } = require("./ticketService");
 const { sendTextMessage } = require("./whatsappService");
-const { ESCALATION_REPLY, isGreetingOnly } = require("./openaiService");
+const {
+  ESCALATION_REPLY,
+  isGreetingOnly,
+  hasIdentityDetails,
+} = require("./openaiService");
 
 const FELLOW_SUPPORT_REPLY =
   "Let me inform my fellow support about this issue so they can assist you.";
@@ -224,18 +228,11 @@ async function escalateToSupport({
     priority: resolvedPriority,
   });
 
-  if (!ticket || !ticket.ok) {
+  const ticketOk = Boolean(ticket && ticket.ok);
+  if (!ticketOk) {
     logger.error("Escalation ticket creation failed", {
       error: ticket && ticket.error ? ticket.error : "unknown",
     });
-    return {
-      ok: false,
-      reused: false,
-      ticketCreated: false,
-      notified: false,
-      error: (ticket && ticket.error) || "ticket_failed",
-      customerReply: FELLOW_SUPPORT_FAILED,
-    };
   }
 
   let row;
@@ -248,8 +245,8 @@ async function escalateToSupport({
       issueSummary,
       reason: resolvedReason,
       priority: resolvedPriority,
-      status: "TICKET_CREATED",
-      ticketId: ticket.ticketId || null,
+      status: ticketOk ? "TICKET_CREATED" : "WAITING_FOR_SUPPORT",
+      ticketId: ticketOk ? ticket.ticketId || null : null,
       agentId,
       agentName,
       notifyNumber: notifyNumber || null,
@@ -284,20 +281,20 @@ async function escalateToSupport({
           company,
           summary: issueSummary,
           priority: resolvedPriority,
-          ticketId: ticket.ticketId,
+          ticketId: ticketOk ? ticket.ticketId : null,
         }),
       });
       notified = Boolean(sent && sent.ok);
       if (!notified) {
         logger.error("Support agent WhatsApp notification failed", {
           error: sent && sent.error ? sent.error : "unknown",
-          ticketId: ticket.ticketId || "unknown",
+          ticketId: ticketOk && ticket.ticketId ? ticket.ticketId : "unknown",
         });
       }
     } catch (error) {
       logger.error("Support agent WhatsApp notification failed", {
         error: error && error.message ? String(error.message).slice(0, 120) : "unhandled",
-        ticketId: ticket.ticketId || "unknown",
+        ticketId: ticketOk && ticket.ticketId ? ticket.ticketId : "unknown",
       });
     }
   } else if (!notifyNumber) {
@@ -310,12 +307,23 @@ async function escalateToSupport({
     });
   }
 
+  if (!ticketOk && !notified && !(row && row.id)) {
+    return {
+      ok: false,
+      reused: false,
+      ticketCreated: false,
+      notified: false,
+      error: (ticket && ticket.error) || "ticket_failed",
+      customerReply: FELLOW_SUPPORT_FAILED,
+    };
+  }
+
   return {
     ok: true,
     reused: false,
-    ticketCreated: true,
+    ticketCreated: ticketOk,
     notified,
-    ticketId: ticket.ticketId || null,
+    ticketId: ticketOk ? ticket.ticketId || null : null,
     agentName,
     customerReply: FELLOW_SUPPORT_REPLY,
     escalation: row || null,
@@ -371,19 +379,15 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
     return false;
   }
 
+  if (isUnregisteredContext(clientContext) && !hasIdentityDetails(message)) {
+    return false;
+  }
+
   if (generated && generated.escalationRequest) {
     return true;
   }
 
   if (generated && generated.reply === ESCALATION_REPLY) {
-    return true;
-  }
-
-  if (
-    generated &&
-    !generated.ok &&
-    isUnregisteredContext(clientContext)
-  ) {
     return true;
   }
 
