@@ -6,7 +6,7 @@ const {
   classifyIntent,
   conversationalFallback,
   isConversationalMessage,
-  isSupportCapableIntent,
+  isActionRequiredIntent,
   unknownFallback,
 } = require("./intentService");
 
@@ -15,13 +15,13 @@ const MAX_HISTORY_MESSAGES = 16;
 const FALLBACK_REPLY =
   "Sorry, I didn't quite understand that. Could you explain what you need help with?";
 const ESCALATION_REPLY =
-  "Let me inform my fellow support about this issue so they can assist you.";
+  "I've sent your request to my fellow support so they can assist you.";
 const ESCALATE_TOOL = {
   type: "function",
   function: {
     name: "escalate_to_support",
     description:
-      "Start the internal support escalation workflow only when a support agent must take action on a concrete issue. Do not use this for greetings, small talk, or the first identity-discovery turn with an unregistered number.",
+      "Create a VIBE ticket and notify the assigned support agent only when the customer needs an action you cannot perform: register a contact, change company data, change POS configuration, add a user, or another task with no API or permission. Do not use this for how-to questions, greetings, troubleshooting you can explain, or when you are only unsure.",
     parameters: {
       type: "object",
       properties: {
@@ -172,7 +172,7 @@ function hasIdentityDetails(message) {
 
 function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY, message = "") {
   if (
-    isSupportCapableIntent(classifyIntent(message)) &&
+    isActionRequiredIntent(classifyIntent(message)) &&
     countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS
   ) {
     return ESCALATION_REPLY;
@@ -355,7 +355,7 @@ async function generateReply({
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
   const intent = classifyIntent(trimmedMessage);
-  const allowTools = hasImage || isSupportCapableIntent(intent);
+  const allowTools = hasImage || isActionRequiredIntent(intent);
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {
@@ -424,7 +424,7 @@ async function generateReply({
     const skipEscalation =
       Boolean(escalationRequest) &&
       !hasImage &&
-      (!isSupportCapableIntent(intent) ||
+      (!isActionRequiredIntent(intent) ||
         (unregistered && !hasIdentityDetails(trimmedMessage)));
 
     if (skipEscalation) {

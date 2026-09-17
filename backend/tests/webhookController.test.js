@@ -538,7 +538,8 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, FALLBACK_REPLY);
   });
 
-  it("escalates after two fallback replies instead of repeating them", async () => {
+  it("does not escalate an invoice problem just because OpenAI failed twice", async () => {
+    const ticketCalls = [];
     const results = await processTextEvents(
       [
         {
@@ -563,22 +564,23 @@ describe("processTextEvents", () => {
           error: "api_error",
         }),
         sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, ESCALATION_REPLY);
+          assert.equal(body, FALLBACK_REPLY);
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
-        escalateFn: async () => ({
-          ok: true,
-          customerReply: ESCALATION_REPLY,
-        }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true, customerReply: ESCALATION_REPLY };
+        },
         findOpenEscalationFn: async () => null,
       }
     );
 
-    assert.equal(results[0].reply, ESCALATION_REPLY);
+    assert.equal(results[0].reply, FALLBACK_REPLY);
+    assert.equal(ticketCalls.length, 0);
   });
 
-  it("fires a ticket when the reply is ESCALATION_REPLY", async () => {
+  it("creates a ticket when the customer needs an action the AI cannot perform", async () => {
     const ticketCalls = [];
     const results = await processTextEvents(
       [
@@ -586,33 +588,34 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.esc",
           customerNumber: "250788000000",
-          message: "The invoice failed to post",
+          message: "I want to add a new customer contact.",
         },
       ],
       {
         typingMinVisibleMs: 0,
         markReadAndShowTypingFn: async () => ({ ok: true }),
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [
-          { role: "assistant", content: FALLBACK_REPLY },
-          { role: "user", content: "still broken" },
-          { role: "assistant", content: FALLBACK_REPLY },
-        ],
-        loadClientProfileFn: async () => ({ clientContext: "" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+        }),
         generateReplyFn: async () => ({
-          ok: false,
-          reply: FALLBACK_REPLY,
-          error: "api_error",
+          ok: true,
+          reply: ESCALATION_REPLY,
+          escalationRequest: {
+            summary: "Add a new customer contact",
+            why: "No contact-registration API",
+          },
         }),
         sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
         persistOutbound: async () => ({ ok: true }),
-        createTicketFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true, ticketId: "TKT-TEST" };
-        },
         escalateFn: async (args) => {
           ticketCalls.push(args);
-          return { ok: true, ticketCreated: true, customerReply: ESCALATION_REPLY };
+          return {
+            ok: true,
+            ticketCreated: true,
+            customerReply: ESCALATION_REPLY,
+          };
         },
         findOpenEscalationFn: async () => null,
       }
@@ -620,7 +623,6 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].reply, ESCALATION_REPLY);
     assert.equal(ticketCalls.length, 1);
-    assert.equal(ticketCalls[0].reason, "ai_escalation");
     assert.equal(ticketCalls[0].customerNumber, "250788000000");
   });
 

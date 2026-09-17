@@ -373,13 +373,21 @@ async function processTextEvents(
           createTicketFn,
         });
 
-        if (escalated && escalated.customerReply) {
-          if (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY) {
-            generated = {
-              ...generated,
-              reply: escalated.customerReply,
-            };
-          }
+        if (escalated && escalated.ok && escalated.customerReply) {
+          generated = {
+            ...generated,
+            reply: escalated.customerReply,
+          };
+        } else if (
+          escalated &&
+          !escalated.ok &&
+          escalated.customerReply &&
+          (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY)
+        ) {
+          generated = {
+            ...generated,
+            reply: escalated.customerReply,
+          };
         }
       } catch (ticketError) {
         logger.error("Escalation threw unexpectedly", {

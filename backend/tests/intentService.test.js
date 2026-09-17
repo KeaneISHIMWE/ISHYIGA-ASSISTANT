@@ -17,10 +17,34 @@ describe("classifyIntent", () => {
     assert.equal(isSupportCapableIntent(classifyIntent("Umeze neza?")), false);
   });
 
+  it("classifies how-to questions as information, not tickets", () => {
+    assert.equal(classifyIntent("How do I print a receipt?"), INTENTS.INFORMATION_REQUEST);
+    assert.equal(
+      classifyIntent("Where can I see customer contacts?"),
+      INTENTS.INFORMATION_REQUEST
+    );
+    assert.equal(isSupportCapableIntent(classifyIntent("How do I print a receipt?")), false);
+  });
+
   it("classifies a POS question as a technical issue, not an automatic ticket", () => {
     assert.equal(
       classifyIntent("I have an issue with my POS"),
       INTENTS.TECHNICAL_ISSUE
+    );
+    assert.equal(classifyIntent("My POS is slow."), INTENTS.TECHNICAL_ISSUE);
+    assert.equal(isSupportCapableIntent(classifyIntent("My POS is slow.")), false);
+  });
+
+  it("classifies actions the AI cannot perform as escalation intents", () => {
+    assert.equal(
+      classifyIntent("I want to add a new customer contact."),
+      INTENTS.REGISTRATION_REQUEST
+    );
+    assert.equal(
+      classifyIntent(
+        "My POS configuration needs to be changed, but I don't have access to do it."
+      ),
+      INTENTS.SUPPORT_REQUEST
     );
   });
 
