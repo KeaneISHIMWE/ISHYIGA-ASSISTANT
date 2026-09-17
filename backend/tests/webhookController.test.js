@@ -566,6 +566,11 @@ describe("processTextEvents", () => {
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
+        escalateFn: async () => ({
+          ok: true,
+          customerReply: ESCALATION_REPLY,
+        }),
+        findOpenEscalationFn: async () => null,
       }
     );
 
@@ -604,6 +609,11 @@ describe("processTextEvents", () => {
           ticketCalls.push(args);
           return { ok: true, ticketId: "TKT-TEST" };
         },
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true, ticketCreated: true, customerReply: ESCALATION_REPLY };
+        },
+        findOpenEscalationFn: async () => null,
       }
     );
 
@@ -640,6 +650,11 @@ describe("processTextEvents", () => {
           ticketCalls.push(args);
           return { ok: true };
         },
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true };
+        },
+        findOpenEscalationFn: async () => null,
       }
     );
 

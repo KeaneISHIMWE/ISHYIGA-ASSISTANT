@@ -143,6 +143,48 @@ async function listByAgentKey(agentKey, filters = {}) {
   return result.rows;
 }
 
+async function findAssignedAgent({ client, contact } = {}) {
+  const clientName = String(client || "").trim();
+  const contactDigits = String(contact || "").replace(/\D/g, "");
+  if (!clientName && !contactDigits) {
+    return null;
+  }
+
+  const values = [];
+  const clauses = ["btrim(COALESCE(support_agent, '')) <> ''"];
+
+  const matches = [];
+  if (clientName) {
+    values.push(`%${clientName}%`);
+    matches.push(`client_name ILIKE $${values.length}`);
+  }
+
+  if (contactDigits) {
+    values.push(`%${contactDigits}%`);
+    matches.push(`contact ILIKE $${values.length}`);
+  }
+
+  if (matches.length) {
+    clauses.push(`(${matches.join(" OR ")})`);
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        MIN(support_agent) AS support_agent,
+        COUNT(*)::int AS clients_count
+      FROM support
+      WHERE ${clauses.join(" AND ")}
+      GROUP BY lower(btrim(support_agent))
+      ORDER BY COUNT(*) DESC, MAX(visit_at) DESC NULLS LAST
+      LIMIT 1
+    `,
+    values
+  );
+
+  return result.rows[0] || null;
+}
+
 async function findById(id) {
   const result = await pool.query(
     `
@@ -214,6 +256,7 @@ module.exports = {
   list,
   listAgents,
   listByAgentKey,
+  findAssignedAgent,
   findById,
   upsert,
   count,

@@ -1,7 +1,13 @@
 const { randomUUID } = require("node:crypto");
 const { env } = require("../config/env");
-const { generateReply } = require("../services/openaiService");
+const { generateReply, ESCALATION_REPLY } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
+const {
+  escalateToSupport,
+  formatOpenTicketContext,
+  shouldEscalate,
+} = require("../services/escalationService");
+const escalationModel = require("../models/escalation");
 const { toCanonicalWhatsappDigits } = require("../services/contactRules");
 const {
   persistInboundEvent,
@@ -43,6 +49,8 @@ async function createMessage(
     generateReplyFn = generateReply,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
+    escalateFn = escalateToSupport,
+    findOpenEscalationFn = escalationModel.findLatestOpenByCustomer,
   } = {}
 ) {
   const message = req.body && req.body.message;
@@ -95,13 +103,54 @@ async function createMessage(
     } catch (_error) {
       logger.error("Client profile lookup failed", { reason: "api_message" });
     }
+
+    try {
+      const open = await findOpenEscalationFn(phone);
+      const openContext = formatOpenTicketContext(open);
+      if (openContext) {
+        clientContext = clientContext
+          ? `${clientContext}\n\n${openContext}`
+          : openContext;
+      }
+    } catch (_error) {
+      logger.error("Open escalation lookup failed", { reason: "api_message" });
+    }
   }
 
-  const generated = await generateReplyFn({
+  let generated = await generateReplyFn({
     message: trimmedMessage,
     history,
     clientContext,
   });
+
+  if (shouldEscalate({ generated, clientContext })) {
+    const request = generated.escalationRequest || {};
+    try {
+      const escalated = await escalateFn({
+        conversationId,
+        customerNumber: phone,
+        message: trimmedMessage,
+        clientContext,
+        reason:
+          request.reason ||
+          (generated.reply === ESCALATION_REPLY ? "ai_escalation" : undefined),
+        summary: request.summary,
+        why: request.why,
+        tried: request.tried,
+        priority: request.priority,
+      });
+      if (escalated && escalated.customerReply) {
+        if (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY || !escalated.ok) {
+          generated = {
+            ...generated,
+            reply: escalated.customerReply,
+          };
+        }
+      }
+    } catch (_error) {
+      logger.error("Escalation threw unexpectedly", { reason: "api_message" });
+    }
+  }
 
   if (conversationId && generated.reply) {
     await persistOutbound({

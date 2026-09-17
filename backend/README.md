@@ -311,3 +311,19 @@ Errors:
 
 An agent with no visit rows cannot exist in this API, because agents are derived from those rows. Unknown slugs return 404. Filters that match no visits return `200` with an empty list.
 
+## Support escalation
+
+When a customer issue needs a support agent, the assistant starts one workflow:
+
+1. Identify the customer from CARE and the WhatsApp number.
+2. Find the assigned support agent from the `support` table (company name or client contact).
+3. Create a VIBE ticket with `POST` `CARE_TICKET_API_URL`.
+4. Notify `SUPPORT_NOTIFY_WHATSAPP` on WhatsApp.
+5. Keep talking to the customer as fellow support. Do not say "human" or "bot".
+6. If the same open issue already has a ticket, reuse it.
+7. When that notify number replies with a completion phrase such as Done, Finished, or Resolved, mark the local escalation resolved and tell the customer.
+
+Customer-facing language after a successful ticket: "Let me inform my fellow support about this issue so they can assist you." If ticket creation fails, the customer is not told the request was registered.
+
+Set `SUPPORT_NOTIFY_WHATSAPP` on the host. The number is not hardcoded. Agent phone/email are still not stored per agent; this notify number is the WhatsApp destination for assigned-agent alerts.
+

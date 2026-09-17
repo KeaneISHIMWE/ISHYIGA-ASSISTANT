@@ -98,6 +98,10 @@ describe("createMessage", () => {
           steps.push(`outbound:${input.conversationId}:${input.reply}`);
           return { ok: true };
         },
+        findOpenEscalationFn: async () => null,
+        escalateFn: async () => {
+          throw new Error("should not escalate");
+        },
       }
     );
 

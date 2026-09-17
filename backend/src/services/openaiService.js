@@ -8,7 +8,46 @@ const MAX_HISTORY_MESSAGES = 16;
 const FALLBACK_REPLY =
   "Sorry, I didn't get that properly. Could you please explain it to me again?";
 const ESCALATION_REPLY =
-  "I'm having trouble answering right now. Please contact our support team and we'll help you from there.";
+  "Let me inform my fellow support about this issue so they can assist you.";
+const ESCALATE_TOOL = {
+  type: "function",
+  function: {
+    name: "escalate_to_support",
+    description:
+      "Start the internal support escalation workflow when a support agent must take action. Use this for registration/verification, account changes, billing, POS/RRA/technical intervention, explicit support requests, or any issue you cannot safely resolve yourself.",
+    parameters: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description: "Short description of the customer issue",
+        },
+        why: {
+          type: "string",
+          description: "Why a support agent must intervene",
+        },
+        tried: {
+          type: "string",
+          description: "What you already checked or tried",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+        },
+        reason: {
+          type: "string",
+          enum: [
+            "support_required",
+            "unregistered_contact",
+            "human_requested",
+            "ai_escalation",
+          ],
+        },
+      },
+      required: ["summary", "why"],
+    },
+  },
+};
 const GREETING_REPLY = "Hello 👋";
 const MAX_CONSECUTIVE_FALLBACKS = 2;
 const GREETING_ONLY_PATTERN =
@@ -157,6 +196,50 @@ function extractReplyText(response) {
   return typeof text === "string" ? text.trim() : "";
 }
 
+function extractEscalationRequest(response) {
+  const message =
+    response && response.choices && response.choices[0]
+      ? response.choices[0].message
+      : null;
+  const calls = message && Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const call = calls.find((item) => {
+    const name =
+      (item && item.function && item.function.name) || (item && item.name);
+    return name === "escalate_to_support";
+  });
+
+  if (!call) {
+    return null;
+  }
+
+  let args = {};
+  try {
+    args = JSON.parse((call.function && call.function.arguments) || "{}");
+  } catch (_error) {
+    args = {};
+  }
+
+  const summary = typeof args.summary === "string" ? args.summary.trim() : "";
+  const why = typeof args.why === "string" ? args.why.trim() : "";
+  if (!summary && !why) {
+    return {
+      summary: "Support intervention required",
+      why: why || "A support agent needs to take action.",
+      tried: typeof args.tried === "string" ? args.tried.trim() : "",
+      priority: args.priority,
+      reason: args.reason,
+    };
+  }
+
+  return {
+    summary: summary || "Support intervention required",
+    why: why || "A support agent needs to take action.",
+    tried: typeof args.tried === "string" ? args.tried.trim() : "",
+    priority: args.priority,
+    reason: args.reason,
+  };
+}
+
 function classifyOpenAIError(error) {
   if (!error) {
     return "unknown";
@@ -253,7 +336,7 @@ async function generateReply({
     hasImage,
   });
 
-  const requestCompletion = (historyForRequest) =>
+  const requestCompletion = (historyForRequest, withTools = true) =>
     openai.chat.completions.create(
       {
         model,
@@ -263,6 +346,7 @@ async function generateReply({
           hasImage ? image : null,
           clientContext
         ),
+        ...(withTools ? { tools: [ESCALATE_TOOL], tool_choice: "auto" } : {}),
       },
       { timeout: REQUEST_TIMEOUT_MS }
     );
@@ -300,9 +384,10 @@ async function generateReply({
       response = await requestCompletion([]);
     }
 
+    const escalationRequest = extractEscalationRequest(response);
     const text = extractReplyText(response);
 
-    if (!text) {
+    if (!text && !escalationRequest) {
       logger.warn("OpenAI response received", { empty: true });
       return failureResult({
         message: trimmedMessage,
@@ -324,7 +409,11 @@ async function generateReply({
           ? response.usage.completion_tokens
           : null,
     });
-    return { ok: true, reply: text };
+    return {
+      ok: true,
+      reply: text || "",
+      escalationRequest,
+    };
   } catch (error) {
     const reason = classifyOpenAIError(error);
     logFailure(error, reason);
@@ -344,6 +433,7 @@ module.exports = {
   classifyOpenAIError,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
+  extractEscalationRequest,
   GREETING_REPLY,
   MAX_CONSECUTIVE_FALLBACKS,
   isGreetingOnly,

@@ -54,6 +54,7 @@ const env = {
     "https://ishyiga.rw/care/api/client-portal/create-ticket"
   ),
   careTicketApiKey: readEnv("CARE_TICKET_API_KEY", ""),
+  supportNotifyWhatsapp: readEnv("SUPPORT_NOTIFY_WHATSAPP", ""),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {

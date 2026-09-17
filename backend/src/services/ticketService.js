@@ -13,6 +13,7 @@ const TICKET_REASONS = {
   ai_escalation: "AI Escalation — Repeated Failures",
   unregistered_contact: "Unregistered Contact Needs Verification",
   human_requested: "Customer Requested Human Agent",
+  support_required: "Support Agent Action Required",
 };
 
 /**
@@ -33,14 +34,57 @@ function buildSubject(reason) {
  * @param {string} [params.clientContext]
  * @returns {string}
  */
-function buildDescription({ reason, customerNumber, message, clientContext }) {
+function buildDescription({
+  reason,
+  customerNumber,
+  message,
+  clientContext,
+  company,
+  customerId,
+  agentName,
+  agentId,
+  summary,
+  why,
+  tried,
+  actionRequired,
+} = {}) {
   const lines = [
-    `Reason: ${reason}`,
+    `Customer: ${company || "unknown"}`,
     `Customer WhatsApp: ${customerNumber || "unknown"}`,
   ];
 
+  if (customerId) {
+    lines.push(`Customer ID: ${customerId}`);
+  }
+
+  if (agentName) {
+    lines.push(`Support agent: ${agentName}`);
+  }
+
+  if (agentId) {
+    lines.push(`Support agent ID: ${agentId}`);
+  }
+
+  lines.push(`Reason: ${reason}`);
+
+  if (summary && summary.trim()) {
+    lines.push(`Issue: ${summary.trim()}`);
+  }
+
   if (message && message.trim()) {
     lines.push(`Last message: ${message.trim()}`);
+  }
+
+  if (tried && String(tried).trim()) {
+    lines.push(`AI troubleshooting: ${String(tried).trim()}`);
+  }
+
+  if (why && String(why).trim()) {
+    lines.push(`Why support is needed: ${String(why).trim()}`);
+  }
+
+  if (actionRequired && String(actionRequired).trim()) {
+    lines.push(`Action required: ${String(actionRequired).trim()}`);
   }
 
   if (clientContext && clientContext.trim()) {
@@ -57,13 +101,53 @@ function buildDescription({ reason, customerNumber, message, clientContext }) {
  * @param {object} params
  * @returns {object}
  */
-function buildTicketPayload({ reason, customerNumber, message, clientContext }) {
+function resolveTicketPriority(reason, priority) {
+  const requested = String(priority || "").trim().toLowerCase();
+  if (requested === "high" || requested === "medium" || requested === "low") {
+    return requested;
+  }
+
+  if (reason === "ai_escalation") {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function buildTicketPayload({
+  reason,
+  customerNumber,
+  message,
+  clientContext,
+  company,
+  customerId,
+  agentName,
+  agentId,
+  summary,
+  why,
+  tried,
+  actionRequired,
+  priority,
+} = {}) {
   return {
     subject: buildSubject(reason),
-    description: buildDescription({ reason, customerNumber, message, clientContext }),
+    description: buildDescription({
+      reason,
+      customerNumber,
+      message,
+      clientContext,
+      company,
+      customerId,
+      agentName,
+      agentId,
+      summary,
+      why,
+      tried,
+      actionRequired,
+    }),
     phone: customerNumber || undefined,
     source: "whatsapp_ai",
-    priority: reason === "ai_escalation" ? "medium" : "low",
+    priority: resolveTicketPriority(reason, priority),
   };
 }
 
@@ -102,6 +186,15 @@ async function createTicket({
   customerNumber,
   message,
   clientContext,
+  company,
+  customerId,
+  agentName,
+  agentId,
+  summary,
+  why,
+  tried,
+  actionRequired,
+  priority,
   fetchFn = fetch,
 } = {}) {
   const apiUrl = getTicketApiUrl();
@@ -112,7 +205,21 @@ async function createTicket({
     return { ok: false, error: "not_configured" };
   }
 
-  const payload = buildTicketPayload({ reason, customerNumber, message, clientContext });
+  const payload = buildTicketPayload({
+    reason,
+    customerNumber,
+    message,
+    clientContext,
+    company,
+    customerId,
+    agentName,
+    agentId,
+    summary,
+    why,
+    tried,
+    actionRequired,
+    priority,
+  });
 
   logger.info("Ticket creation started", {
     reason,

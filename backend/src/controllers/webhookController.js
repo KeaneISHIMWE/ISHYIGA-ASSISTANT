@@ -6,7 +6,15 @@ const {
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const { createTicket } = require("../services/ticketService");
+const {
+  escalateToSupport,
+  formatOpenTicketContext,
+  isAgentNumber,
+  resolveByAgent,
+  shouldEscalate,
+} = require("../services/escalationService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
+const escalationModel = require("../models/escalation");
 const {
   persistInboundEvent,
   persistOutboundReply,
@@ -135,6 +143,9 @@ async function processTextEvents(
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
     createTicketFn = createTicket,
+    escalateFn = escalateToSupport,
+    resolveByAgentFn = resolveByAgent,
+    findOpenEscalationFn = escalationModel.findLatestOpenByCustomer,
     typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
     nowFn = Date.now,
     sleepFn = sleep,
@@ -157,6 +168,54 @@ async function processTextEvents(
       await markReadAndShowTypingFn({ messageId: event.messageId });
     } catch (_error) {
       logger.error("WhatsApp read/typing failed", { reason: "unhandled" });
+    }
+
+    if (isAgentNumber(event.customerNumber) && event.kind === "text") {
+      const agentResult = await resolveByAgentFn({
+        message: event.message,
+      });
+
+      if (agentResult.handled) {
+        const agentReply =
+          agentResult.agentReply ||
+          "I could not match that to an open support request.";
+        let sent = { ok: false };
+        try {
+          sent = await sendTextMessageFn({
+            to: event.customerNumber,
+            body: agentReply,
+          });
+        } catch (_error) {
+          logger.error("WhatsApp send failed", { reason: "unhandled" });
+        }
+
+        if (
+          agentResult.ok &&
+          agentResult.customerNumber &&
+          agentResult.customerReply
+        ) {
+          try {
+            await sendTextMessageFn({
+              to: agentResult.customerNumber,
+              body: agentResult.customerReply,
+            });
+          } catch (_error) {
+            logger.error("Customer resolution notify failed", {
+              reason: "unhandled",
+            });
+          }
+        }
+
+        results.push({
+          messageId: event.messageId,
+          conversationId: null,
+          persistedInbound: false,
+          reply: agentReply,
+          sent: sent.ok,
+          skipped: "support_agent",
+        });
+        continue;
+      }
     }
 
     const inbound = await persistInbound(event);
@@ -216,6 +275,17 @@ async function processTextEvents(
             clientLookup && clientLookup.clientContext
               ? clientLookup.clientContext
               : "";
+          try {
+            const open = await findOpenEscalationFn(event.customerNumber);
+            const openContext = formatOpenTicketContext(open);
+            if (openContext) {
+              clientContext = clientContext
+                ? `${clientContext}\n\n${openContext}`
+                : openContext;
+            }
+          } catch (_error) {
+            logger.error("Open escalation lookup failed", { reason: "unhandled" });
+          }
         } catch (_error) {
           logger.error("Client profile lookup failed", {
             reason: "unhandled",
@@ -251,31 +321,47 @@ async function processTextEvents(
       };
     }
 
-    // --- Ticket escalation (fire-and-forget, never blocks the WhatsApp reply) ---
-    const isEscalation = generated.reply === ESCALATION_REPLY;
-    const isUnregisteredNeedingVerification =
-      !generated.ok &&
-      typeof clientContext === "string" &&
-      clientContext.includes("CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT");
+    if (shouldEscalate({ generated, clientContext })) {
+      const request = generated.escalationRequest || {};
+      try {
+        const escalated = await escalateFn({
+          conversationId: inbound.conversationId,
+          customerNumber: event.customerNumber,
+          message: event.message,
+          clientContext,
+          reason:
+            request.reason ||
+            (generated.reply === ESCALATION_REPLY
+              ? "ai_escalation"
+              : undefined),
+          summary: request.summary,
+          why: request.why,
+          tried: request.tried,
+          priority: request.priority,
+          createTicketFn,
+        });
 
-    if (isEscalation || isUnregisteredNeedingVerification) {
-      const ticketReason = isEscalation
-        ? "ai_escalation"
-        : "unregistered_contact";
-      createTicketFn({
-        reason: ticketReason,
-        customerNumber: event.customerNumber,
-        message: event.message,
-        clientContext,
-      }).catch((ticketError) => {
-        logger.error("Ticket creation threw unexpectedly", {
-          reason: ticketReason,
+        if (escalated && escalated.customerReply) {
+          if (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY) {
+            generated = {
+              ...generated,
+              reply: escalated.customerReply,
+            };
+          } else if (!escalated.ok) {
+            generated = {
+              ...generated,
+              reply: escalated.customerReply,
+            };
+          }
+        }
+      } catch (ticketError) {
+        logger.error("Escalation threw unexpectedly", {
           error:
             ticketError && ticketError.message
               ? String(ticketError.message).slice(0, 120)
               : "unknown",
         });
-      });
+      }
     }
 
     logger.info("OpenAI reply generated", {

@@ -257,6 +257,40 @@ describe("generateReply", () => {
     assert.equal(result.error, "timeout");
   });
 
+  it("returns an escalation request when the model calls the support tool", async () => {
+    const result = await generateReply({
+      message: "Please get support to fix the RRA connection",
+      client: fakeClient(async (payload) => {
+        assert.equal(payload.tools[0].function.name, "escalate_to_support");
+        return {
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    function: {
+                      name: "escalate_to_support",
+                      arguments: JSON.stringify({
+                        summary: "POS cannot connect to RRA",
+                        why: "Needs configuration help",
+                        priority: "high",
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.escalationRequest.summary, "POS cannot connect to RRA");
+    assert.equal(result.escalationRequest.priority, "high");
+  });
+
   it("sends the client record inside the system prompt", async () => {
     let systemContent = "";
     const result = await generateReply({

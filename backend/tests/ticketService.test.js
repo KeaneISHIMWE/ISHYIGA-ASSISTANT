@@ -19,6 +19,7 @@ describe("buildSubject", () => {
       "Unregistered Contact Needs Verification"
     );
     assert.equal(buildSubject("human_requested"), "Customer Requested Human Agent");
+    assert.equal(buildSubject("support_required"), "Support Agent Action Required");
   });
 
   it("falls back to a generic label for unknown reason codes", () => {
@@ -40,6 +41,7 @@ describe("buildDescription", () => {
     assert.match(description, /ai_escalation/);
     assert.match(description, /250788000000/);
     assert.match(description, /My POS is not working/);
+    assert.match(description, /Customer:/);
   });
 
   it("includes customer context when provided", () => {
