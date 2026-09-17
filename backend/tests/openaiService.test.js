@@ -441,7 +441,7 @@ describe("resolveFailedCustomerReply", () => {
     );
   });
 
-  it("escalates after two consecutive fallbacks", () => {
+  it("does not escalate a how-to or unclear question after fallbacks", () => {
     const history = [
       { role: "user", content: "The invoice failed to post" },
       { role: "assistant", content: FALLBACK_REPLY },
@@ -452,21 +452,21 @@ describe("resolveFailedCustomerReply", () => {
 
     assert.equal(
       resolveFailedCustomerReply(history, FALLBACK_REPLY, "The invoice failed to post"),
-      ESCALATION_REPLY
+      FALLBACK_REPLY
     );
   });
 
-  it("stays on escalation after it has already been sent", () => {
+  it("escalates after two consecutive fallbacks only for an action the AI cannot perform", () => {
     const history = [
       { role: "assistant", content: FALLBACK_REPLY },
-      { role: "assistant", content: ESCALATION_REPLY },
+      { role: "assistant", content: FALLBACK_REPLY },
     ];
 
     assert.equal(
       resolveFailedCustomerReply(
         history,
         FALLBACK_REPLY,
-        "The invoice failed to post"
+        "I want to add a new customer contact."
       ),
       ESCALATION_REPLY
     );

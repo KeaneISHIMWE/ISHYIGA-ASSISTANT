@@ -14,11 +14,13 @@ const {
 const {
   classifyIntent,
   INTENTS,
-  isSupportCapableIntent,
+  isActionRequiredIntent,
 } = require("./intentService");
 
 const FELLOW_SUPPORT_REPLY =
-  "Let me inform my fellow support about this issue so they can assist you.";
+  "I've sent your request to my fellow support so they can assist you.";
+const FELLOW_SUPPORT_REGISTRATION =
+  "I've sent your request to my fellow support so they can register and verify your contact.";
 const FELLOW_SUPPORT_ALREADY_OPEN =
   "My fellow support is already looking into this. I'll stay with you in the meantime.";
 const FELLOW_SUPPORT_FAILED =
@@ -113,18 +115,22 @@ function formatAgentNotification({
   priority,
   ticketId,
 }) {
-  const greeting = agentName ? `Hello ${agentName.split(" ")[0]},` : "Hello,";
+  const firstName = agentName ? agentName.split(" ")[0] : "";
+  const greeting = firstName ? `Hello ${firstName} 👋` : "Hello 👋";
+  const clientName = company || "a customer";
   const ticketLine = ticketId ? `VIBE Ticket: ${ticketId}` : "VIBE Ticket: pending reference";
+  const priorityLabel = priority === "high" ? "High" : priority === "low" ? "Low" : "Normal";
 
   return [
     greeting,
-    `A support request has been created for ${company || "a customer"}.`,
     "",
-    `Issue: ${summary || "Support intervention required."}`,
-    `Priority: ${priority || "medium"}`,
+    `You have a support request from ${clientName}.`,
+    "",
+    `Issue: ${summary || "The client needs assistance I cannot perform directly."}`,
     ticketLine,
+    `Priority: ${priorityLabel}`,
     "",
-    "Please assist the customer and let me know here once the issue has been resolved.",
+    "Please assist the client and let me know once it is completed.",
   ].join("\n");
 }
 
@@ -323,14 +329,21 @@ async function escalateToSupport({
     };
   }
 
+  const registration =
+    resolvedReason === "unregistered_contact" ||
+    /register|verif|contact/i.test(`${resolvedReason} ${issueSummary}`);
+
   return {
     ok: true,
     reused: false,
     ticketCreated: ticketOk,
     notified,
     ticketId: ticketOk ? ticket.ticketId || null : null,
+    agentId,
     agentName,
-    customerReply: FELLOW_SUPPORT_REPLY,
+    customerReply: registration
+      ? FELLOW_SUPPORT_REGISTRATION
+      : FELLOW_SUPPORT_REPLY,
     escalation: row || null,
   };
 }
@@ -385,7 +398,7 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
   if (text) {
     const intent = classifyIntent(text);
 
-    if (isGreetingOnly(text) || !isSupportCapableIntent(intent)) {
+    if (isGreetingOnly(text) || !isActionRequiredIntent(intent)) {
       return false;
     }
 
@@ -393,9 +406,11 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
       return false;
     }
 
-    if (intent === INTENTS.SUPPORT_REQUEST) {
+    if (isActionRequiredIntent(intent)) {
       return true;
     }
+
+    return false;
   }
 
   if (generated && generated.escalationRequest) {
@@ -411,6 +426,7 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
 
 module.exports = {
   FELLOW_SUPPORT_REPLY,
+  FELLOW_SUPPORT_REGISTRATION,
   FELLOW_SUPPORT_ALREADY_OPEN,
   FELLOW_SUPPORT_FAILED,
   AGENT_DONE_ACK,

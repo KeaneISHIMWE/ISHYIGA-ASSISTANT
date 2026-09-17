@@ -12,13 +12,11 @@ const INTENTS = {
   UNKNOWN: "UNKNOWN",
 };
 
-const SUPPORT_CAPABLE_INTENTS = new Set([
+const ACTION_REQUIRED_INTENTS = new Set([
   INTENTS.SUPPORT_REQUEST,
-  INTENTS.TECHNICAL_ISSUE,
   INTENTS.ACCOUNT_ISSUE,
   INTENTS.REGISTRATION_REQUEST,
   INTENTS.VERIFICATION_REQUEST,
-  INTENTS.BILLING_REQUEST,
 ]);
 
 const CONVERSATIONAL_INTENTS = new Set([
@@ -36,7 +34,7 @@ const TECHNICAL_PATTERN =
   /\b(pos|ebm|rra|stock|inventory|printer|invoice|receipt|login|password|ntikora|ntikora|ikibazo|not working|doesn't work|does not work|down|error|crash|offline|yanjye)\b/i;
 
 const EXPLICIT_SUPPORT_PATTERN =
-  /\b(need someone|need (a )?technician|need support|need (an? )?agent|send (an? )?(agent|technician)|come (and )?(fix|check)|check it|talk to support|speak (to|with) support|nshaka umuntu|ndakeneye umuntu|mfasha|nshaka ubufasha)\b/i;
+  /\b(need someone|need (a )?technician|need support|get support|need (an? )?agent|send (an? )?(agent|technician)|come (and )?(fix|check)|check it|talk to support|speak (to|with) support|nshaka umuntu|ndakeneye umuntu|mfasha|nshaka ubufasha)\b/i;
 
 const ACCOUNT_PATTERN =
   /\b(add (a )?user|remove (a )?user|permission|password reset|account (locked|access)|user account)\b/i;
@@ -51,7 +49,10 @@ const BILLING_PATTERN =
   /\b(payment|paid|billing|invoice paid|receipt of payment|amafranga)\b/i;
 
 const INFORMATION_PATTERN =
-  /\b(what (services|products)|how do i|how can i|working hours|price|version|what is ishyiga)\b/i;
+  /\b(how do i|how can i|how to|where can i|where do i|what is|what does|what should i do|how do you|can you explain|working hours|price|version)\b/i;
+
+const ACTION_REQUIRED_PATTERN =
+  /\b(add (a )?(new )?(customer )?contact|register( and verify)?( this| the| my| a)?( new)?( phone| number| contact)|link (this |my |a )?number|change( my)? company|update( my)? company|fix( my)?( pos)? configuration|change( the| my)?( pos)? configuration|don'?t have access|do not have access|i cannot (change|update|register|add|fix)|please (add|register|change|update|fix|verify))\b/i;
 
 const FOLLOW_UP_PATTERN =
   /\b(any update|what happened to (my )?ticket|did you (fix|check)|still waiting on (the )?ticket)\b/i;
@@ -85,16 +86,22 @@ function classifyIntent(message) {
     return INTENTS.FOLLOW_UP;
   }
 
+  if (INFORMATION_PATTERN.test(text) && !ACTION_REQUIRED_PATTERN.test(text)) {
+    return INTENTS.INFORMATION_REQUEST;
+  }
+
+  if (ACTION_REQUIRED_PATTERN.test(text) || REGISTRATION_PATTERN.test(text)) {
+    if (/\b(verif|otp)\b/i.test(text)) {
+      return INTENTS.VERIFICATION_REQUEST;
+    }
+    if (/\b(contact|register|link (this |my |a )?number|new number)\b/i.test(text)) {
+      return INTENTS.REGISTRATION_REQUEST;
+    }
+    return INTENTS.SUPPORT_REQUEST;
+  }
+
   if (VERIFICATION_PATTERN.test(text)) {
     return INTENTS.VERIFICATION_REQUEST;
-  }
-
-  if (REGISTRATION_PATTERN.test(text)) {
-    return INTENTS.REGISTRATION_REQUEST;
-  }
-
-  if (BILLING_PATTERN.test(text)) {
-    return INTENTS.BILLING_REQUEST;
   }
 
   if (ACCOUNT_PATTERN.test(text)) {
@@ -109,19 +116,27 @@ function classifyIntent(message) {
     return INTENTS.SUPPORT_REQUEST;
   }
 
+  if (BILLING_PATTERN.test(text) && /\b(dispute|refund|already paid|wrong amount)\b/i.test(text)) {
+    return INTENTS.BILLING_REQUEST;
+  }
+
   if (TECHNICAL_PATTERN.test(text)) {
     return INTENTS.TECHNICAL_ISSUE;
   }
 
-  if (INFORMATION_PATTERN.test(text)) {
+  if (BILLING_PATTERN.test(text)) {
     return INTENTS.INFORMATION_REQUEST;
   }
 
   return INTENTS.UNKNOWN;
 }
 
+function isActionRequiredIntent(intent) {
+  return ACTION_REQUIRED_INTENTS.has(intent);
+}
+
 function isSupportCapableIntent(intent) {
-  return SUPPORT_CAPABLE_INTENTS.has(intent);
+  return isActionRequiredIntent(intent);
 }
 
 function isConversationalIntent(intent) {
@@ -164,10 +179,12 @@ function unknownFallback() {
 
 module.exports = {
   INTENTS,
-  SUPPORT_CAPABLE_INTENTS,
+  ACTION_REQUIRED_INTENTS,
+  SUPPORT_CAPABLE_INTENTS: ACTION_REQUIRED_INTENTS,
   CONVERSATIONAL_INTENTS,
   classifyIntent,
   detectLanguage,
+  isActionRequiredIntent,
   isSupportCapableIntent,
   isConversationalIntent,
   isConversationalMessage,

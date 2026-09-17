@@ -100,9 +100,23 @@ describe("escalation helpers", () => {
     );
     assert.equal(
       shouldEscalate({
-        message: "POS is down at keanne pharmacy",
-        generated: { ok: true, escalationRequest: { summary: "POS down" } },
-        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+        message: "How do I print a receipt?",
+        generated: { ok: true, escalationRequest: { summary: "POS how-to" } },
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "My POS is slow.",
+        generated: { ok: true, escalationRequest: { summary: "POS slow" } },
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "I want to add a new customer contact.",
+        generated: { ok: true, reply: "I will send this to fellow support." },
+        clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
       }),
       true
     );
@@ -245,7 +259,8 @@ describe("formatAgentNotification", () => {
       ticketId: "1234",
     });
     assert.match(body, /Hello Uwimanikunda/);
-    assert.match(body, /Priority: high/);
+    assert.match(body, /TRUSTED PHARMACY LIMITED/);
+    assert.match(body, /Priority: High/);
     assert.doesNotMatch(body, /human support/i);
   });
 });
