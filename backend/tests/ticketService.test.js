@@ -88,6 +88,35 @@ describe("buildTicketPayload", () => {
     });
     assert.equal(payload.priority, "low");
   });
+
+  it("populates message, clientName, and clientCompany with AI flag for CARE portal", () => {
+    const payload = buildTicketPayload({
+      reason: "support_required",
+      customerNumber: "250788123456",
+      company: "Kigali Pharmacy",
+      summary: "POS is down",
+      message: "Need help with printer",
+    });
+
+    assert.ok(payload.message, "message should be populated");
+    assert.match(payload.message, /\[WhatsApp AI\] POS is down/);
+    assert.equal(payload.clientName, "Kigali Pharmacy (via WhatsApp AI)");
+    assert.equal(payload.clientCompany, "Kigali Pharmacy");
+    assert.equal(payload.initialMessage, payload.message);
+  });
+
+  it("falls back to parsing company from clientContext if company is not passed directly", () => {
+    const payload = buildTicketPayload({
+      reason: "ai_escalation",
+      customerNumber: "250788123456",
+      clientContext: "CONTACT STATUS: KNOWN CUSTOMER\n- Company: Super Drugstore",
+      message: "Login error",
+    });
+
+    assert.equal(payload.clientCompany, "Super Drugstore");
+    assert.equal(payload.clientName, "Super Drugstore (via WhatsApp AI)");
+    assert.match(payload.message, /Super Drugstore/);
+  });
 });
 
 // ---------------------------------------------------------------------------

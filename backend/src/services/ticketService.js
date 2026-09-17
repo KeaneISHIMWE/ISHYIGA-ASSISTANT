@@ -25,6 +25,12 @@ function buildSubject(reason) {
   return TICKET_REASONS[reason] || `WhatsApp AI Escalation — ${reason}`;
 }
 
+function parseCompanyFromContext(clientContext) {
+  const text = String(clientContext || "");
+  const match = text.match(/(?:Company name|- Company|Company):\s*(.+)/i);
+  return match ? match[1].trim() : "";
+}
+
 /**
  * Builds the ticket description body from the event context.
  * @param {object} params
@@ -48,8 +54,19 @@ function buildDescription({
   tried,
   actionRequired,
 } = {}) {
+  const resolvedCompany = company || parseCompanyFromContext(clientContext);
+  const cleanSummary = (summary || "").trim();
+  const cleanMessage = (message || "").trim();
+  const reasonLabel = TICKET_REASONS[reason] || reason || "WhatsApp AI Escalation";
+  const issueHeadline = cleanSummary || cleanMessage || reasonLabel;
+  const headline = `[WhatsApp AI] ${issueHeadline.length > 120 ? issueHeadline.slice(0, 117) + "..." : issueHeadline}`;
+
   const lines = [
-    `Customer: ${company || "unknown"}`,
+    headline,
+    "",
+    "--- Ticket Details ---",
+    "Source: WhatsApp AI Assistant",
+    `Customer: ${resolvedCompany || "unknown"}`,
     `Customer WhatsApp: ${customerNumber || "unknown"}`,
   ];
 
@@ -114,6 +131,25 @@ function resolveTicketPriority(reason, priority) {
   return "low";
 }
 
+function resolveClientName({ company, customerNumber, clientContext }) {
+  const resolvedCompany = company || parseCompanyFromContext(clientContext);
+  if (resolvedCompany) {
+    return `${resolvedCompany} (via WhatsApp AI)`;
+  }
+  if (customerNumber && String(customerNumber).trim()) {
+    return `${String(customerNumber).trim()} (via WhatsApp AI)`;
+  }
+  return "Customer (via WhatsApp AI)";
+}
+
+function resolveClientCompany({ company, clientContext }) {
+  const resolvedCompany = company || parseCompanyFromContext(clientContext);
+  if (resolvedCompany) {
+    return resolvedCompany;
+  }
+  return "Ishyiga WhatsApp Customer";
+}
+
 function buildTicketPayload({
   reason,
   customerNumber,
@@ -129,25 +165,37 @@ function buildTicketPayload({
   actionRequired,
   priority,
 } = {}) {
+  const fullDescription = buildDescription({
+    reason,
+    customerNumber,
+    message,
+    clientContext,
+    company,
+    customerId,
+    agentName,
+    agentId,
+    summary,
+    why,
+    tried,
+    actionRequired,
+  });
+
+  const resolvedCompany = company || parseCompanyFromContext(clientContext);
+  const clientName = resolveClientName({ company: resolvedCompany, customerNumber, clientContext });
+  const clientCompany = resolveClientCompany({ company: resolvedCompany, clientContext });
+  const resolvedPriority = resolveTicketPriority(reason, priority);
+
   return {
+    message: fullDescription,
+    initialMessage: fullDescription,
+    clientName,
+    clientCompany,
+    priority: resolvedPriority,
     subject: buildSubject(reason),
-    description: buildDescription({
-      reason,
-      customerNumber,
-      message,
-      clientContext,
-      company,
-      customerId,
-      agentName,
-      agentId,
-      summary,
-      why,
-      tried,
-      actionRequired,
-    }),
+    description: fullDescription,
     phone: customerNumber || undefined,
     source: "whatsapp_ai",
-    priority: resolveTicketPriority(reason, priority),
+    ticketSource: "WHATSAPP_AI",
   };
 }
 
