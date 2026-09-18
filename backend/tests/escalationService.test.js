@@ -120,6 +120,30 @@ describe("escalation helpers", () => {
       }),
       true
     );
+    assert.equal(
+      shouldEscalate({
+        message: "[Screenshot]",
+        generated: {
+          ok: true,
+          reply: "Open Customers, then tap Add.",
+          escalationRequest: { summary: "How to add a customer" },
+          needsSupportAction: false,
+        },
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "[Screenshot]",
+        generated: {
+          ok: true,
+          reply: "This needs a configuration change I cannot make.",
+          needsSupportAction: true,
+        },
+        clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+      }),
+      true
+    );
   });
 });
 

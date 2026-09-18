@@ -394,11 +394,15 @@ async function resolveByAgent({
 
 function shouldEscalate({ generated, clientContext, message } = {}) {
   const text = String(message || "").trim();
+  const needsSupportAction = Boolean(generated && generated.needsSupportAction);
 
   if (text) {
     const intent = classifyIntent(text);
 
-    if (isGreetingOnly(text) || !isActionRequiredIntent(intent)) {
+    if (
+      isGreetingOnly(text) ||
+      (!isActionRequiredIntent(intent) && !needsSupportAction)
+    ) {
       return false;
     }
 
@@ -406,11 +410,15 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
       return false;
     }
 
-    if (isActionRequiredIntent(intent)) {
+    if (isActionRequiredIntent(intent) || needsSupportAction) {
       return true;
     }
 
     return false;
+  }
+
+  if (needsSupportAction) {
+    return true;
   }
 
   if (generated && generated.escalationRequest) {

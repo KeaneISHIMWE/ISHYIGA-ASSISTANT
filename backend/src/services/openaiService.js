@@ -307,6 +307,118 @@ function classifyOpenAIError(error) {
   return "api_error";
 }
 
+const SCREENSHOT_ANALYZE_PROMPT =
+  "Analyze this customer-support screenshot. Reply with JSON only, no markdown. Keys: readable (boolean), application, errorMessage, visibleText, likelyIssue, inferredRequest, needsSupportAction (boolean), whySupportNeeded, followUp. Set readable=false if the image is blurry, cropped, unreadable, or missing the relevant section. Set needsSupportAction=true only if the screenshot shows an action a first-line assistant cannot perform, such as registering a contact, changing company data, changing POS configuration, or changing permissions. How-to screens and errors you can explain are false. Do not copy passwords, PINs, full card numbers, or other secrets.";
+
+const IMAGE_UNCLEAR_REPLY =
+  "I received your screenshot, but it is not clear enough to read the important part. Please send a sharper photo of the full error or screen, or tell me what you see.";
+
+function parseScreenshotAnalysis(text) {
+  const raw = String(text || "").trim();
+  const json = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(json);
+    return {
+      ok: true,
+      readable: parsed.readable !== false,
+      application: String(parsed.application || "").trim(),
+      errorMessage: String(parsed.errorMessage || "").trim(),
+      visibleText: String(parsed.visibleText || "").trim().slice(0, 240),
+      likelyIssue: String(parsed.likelyIssue || "").trim(),
+      inferredRequest: String(parsed.inferredRequest || "").trim(),
+      needsSupportAction: parsed.needsSupportAction === true,
+      whySupportNeeded: String(parsed.whySupportNeeded || "").trim(),
+      followUp: String(parsed.followUp || "").trim(),
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function formatScreenshotContext(analysis) {
+  if (!analysis || !analysis.ok) {
+    return "";
+  }
+
+  return [
+    "SCREENSHOT ANALYSIS",
+    `Readable: ${analysis.readable ? "yes" : "no"}`,
+    analysis.application ? `Application: ${analysis.application}` : null,
+    analysis.errorMessage ? `Visible error: ${analysis.errorMessage}` : null,
+    analysis.visibleText ? `Visible text: ${analysis.visibleText}` : null,
+    analysis.likelyIssue ? `Likely issue: ${analysis.likelyIssue}` : null,
+    analysis.inferredRequest
+      ? `Inferred request: ${analysis.inferredRequest}`
+      : null,
+    `Needs support action: ${analysis.needsSupportAction ? "yes" : "no"}`,
+    analysis.whySupportNeeded
+      ? `Why support is needed: ${analysis.whySupportNeeded}`
+      : null,
+    "Use this analysis with the screenshot. Do not ignore the image. Do not invent error text that is not listed here. Do not create a VIBE ticket only because a screenshot was sent.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function analyzeScreenshot({
+  image,
+  message,
+  client,
+} = {}) {
+  const hasImage = Boolean(image && image.dataUrl);
+  if (!hasImage) {
+    return { ok: false, readable: false, error: "missing_image" };
+  }
+
+  const apiKey = env.openaiApiKey;
+  const openai = client || (apiKey ? createClient(apiKey) : null);
+  if (!openai) {
+    return { ok: false, readable: false, error: "OpenAI is not configured" };
+  }
+
+  const caption =
+    typeof message === "string" && message.trim()
+      ? message.trim()
+      : "The client sent this screenshot without extra text.";
+
+  try {
+    const response = await openai.chat.completions.create(
+      {
+        model: env.openaiVisionModel,
+        messages: [
+          { role: "system", content: SCREENSHOT_ANALYZE_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: caption },
+              { type: "image_url", image_url: { url: image.dataUrl } },
+            ],
+          },
+        ],
+      },
+      { timeout: REQUEST_TIMEOUT_MS }
+    );
+
+    const parsed = parseScreenshotAnalysis(extractReplyText(response));
+    if (!parsed) {
+      logger.warn("Screenshot analysis returned unusable JSON");
+      return { ok: true, readable: true, needsSupportAction: false };
+    }
+
+    logger.info("Screenshot analyzed", {
+      readable: parsed.readable,
+      application: parsed.application || null,
+      needsSupportAction: parsed.needsSupportAction,
+    });
+    return parsed;
+  } catch (error) {
+    logger.error("Screenshot analysis failed", {
+      reason: classifyOpenAIError(error),
+    });
+    return { ok: false, readable: true, needsSupportAction: false, error: "analyze_failed" };
+  }
+}
+
 function shouldRetryWithoutHistory(reason, historyCount) {
   return (
     historyCount > 0 &&
@@ -322,6 +434,7 @@ async function generateReply({
   image,
   client,
   clientContext,
+  screenshotAnalysis,
 } = {}) {
   const hasImage = Boolean(image && image.dataUrl);
   if (!hasImage && (typeof message !== "string" || !message.trim())) {
@@ -354,8 +467,14 @@ async function generateReply({
       ? message.trim()
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
-  const intent = classifyIntent(trimmedMessage);
-  const allowTools = hasImage || isActionRequiredIntent(intent);
+  const intent = classifyIntent(
+    screenshotAnalysis && screenshotAnalysis.inferredRequest
+      ? `${trimmedMessage} ${screenshotAnalysis.inferredRequest}`
+      : trimmedMessage
+  );
+  const allowTools =
+    isActionRequiredIntent(intent) ||
+    Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction);
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {
@@ -421,10 +540,12 @@ async function generateReply({
     let escalationRequest = extractEscalationRequest(response);
     let text = extractReplyText(response);
     const unregistered = isUnregisteredPrompt(clientContext);
+    const actionRequired =
+      isActionRequiredIntent(intent) ||
+      Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction);
     const skipEscalation =
       Boolean(escalationRequest) &&
-      !hasImage &&
-      (!isActionRequiredIntent(intent) ||
+      (!actionRequired ||
         (unregistered && !hasIdentityDetails(trimmedMessage)));
 
     if (skipEscalation) {
@@ -487,6 +608,9 @@ async function generateReply({
       reply: text || "",
       escalationRequest: allowTools ? escalationRequest : null,
       intent,
+      needsSupportAction: Boolean(
+        screenshotAnalysis && screenshotAnalysis.needsSupportAction
+      ),
     };
   } catch (error) {
     const reason = classifyOpenAIError(error);
@@ -503,6 +627,10 @@ async function generateReply({
 
 module.exports = {
   generateReply,
+  analyzeScreenshot,
+  parseScreenshotAnalysis,
+  formatScreenshotContext,
+  IMAGE_UNCLEAR_REPLY,
   buildInput,
   buildSystemPrompt,
   classifyOpenAIError,

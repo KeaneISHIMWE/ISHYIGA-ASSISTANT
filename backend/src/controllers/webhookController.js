@@ -1,8 +1,11 @@
 const { logger } = require("../utils/logger");
 const {
   generateReply,
+  analyzeScreenshot,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
+  IMAGE_UNCLEAR_REPLY,
+  formatScreenshotContext,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const {
@@ -145,6 +148,7 @@ async function processTextEvents(
     sendTextMessageFn = sendTextMessage,
     markReadAndShowTypingFn = markReadAndShowTyping,
     downloadMediaFn = downloadWhatsAppMedia,
+    analyzeScreenshotFn = analyzeScreenshot,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
     createTicketFn = createTicket,
@@ -297,12 +301,44 @@ async function processTextEvents(
           });
         }
 
-        generated = await generateReplyFn({
-          message: event.message,
-          history,
-          image,
-          clientContext,
-        });
+        let screenshotAnalysis = null;
+        if (image) {
+          try {
+            screenshotAnalysis = await analyzeScreenshotFn({
+              image,
+              message: event.message,
+              history,
+            });
+          } catch (_error) {
+            logger.error("Screenshot analysis failed", { reason: "unhandled" });
+            screenshotAnalysis = { ok: false, readable: true };
+          }
+
+          if (screenshotAnalysis && screenshotAnalysis.readable === false) {
+            generated = {
+              ok: true,
+              reply: IMAGE_UNCLEAR_REPLY,
+              escalationRequest: null,
+            };
+          } else {
+            const analysisContext = formatScreenshotContext(screenshotAnalysis);
+            if (analysisContext) {
+              clientContext = clientContext
+                ? `${clientContext}\n\n${analysisContext}`
+                : analysisContext;
+            }
+          }
+        }
+
+        if (!generated) {
+          generated = await generateReplyFn({
+            message: event.message,
+            history,
+            image,
+            clientContext,
+            screenshotAnalysis,
+          });
+        }
       }
     } catch (_error) {
       logger.error("OpenAI request failed", { reason: "unhandled" });
@@ -524,5 +560,6 @@ module.exports = {
   processTextEvents,
   TYPING_MIN_VISIBLE_MS,
   IMAGE_UNREADABLE_REPLY,
+  IMAGE_UNCLEAR_REPLY,
   ESCALATION_REPLY,
 };

@@ -2,6 +2,9 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   generateReply,
+  analyzeScreenshot,
+  parseScreenshotAnalysis,
+  formatScreenshotContext,
   buildInput,
   classifyOpenAIError,
   FALLBACK_REPLY,
@@ -417,6 +420,87 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /invoice error/);
+    assert.equal(usedModel, "gpt-5.6-sol");
+    assert.equal(result.escalationRequest, null);
+  });
+
+  it("does not enable the ticket tool for a screenshot how-to", async () => {
+    let toolsSent = false;
+    const result = await generateReply({
+      message: "How do I add a customer?",
+      image: { dataUrl: "data:image/jpeg;base64,abc" },
+      screenshotAnalysis: {
+        ok: true,
+        readable: true,
+        application: "POS",
+        inferredRequest: "How to add a customer",
+        needsSupportAction: false,
+      },
+      client: fakeClient(async (payload) => {
+        toolsSent = Boolean(payload.tools);
+        return completion("Open Customers, then tap Add and fill the name.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(toolsSent, false);
+    assert.equal(result.escalationRequest, null);
+  });
+
+  it("enables the ticket tool when screenshot analysis needs a support action", async () => {
+    let toolsSent = false;
+    const result = await generateReply({
+      message: "[Screenshot]",
+      image: { dataUrl: "data:image/jpeg;base64,abc" },
+      screenshotAnalysis: {
+        ok: true,
+        readable: true,
+        application: "POS",
+        inferredRequest: "Change POS configuration",
+        needsSupportAction: true,
+      },
+      client: fakeClient(async (payload) => {
+        toolsSent = Boolean(payload.tools);
+        return completion("This needs a change I cannot make.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(toolsSent, true);
+    assert.equal(result.needsSupportAction, true);
+  });
+
+  it("parses screenshot analysis JSON", () => {
+    const parsed = parseScreenshotAnalysis(
+      '```json\n{"readable":true,"application":"POS","errorMessage":"Database connection failed","needsSupportAction":false}\n```'
+    );
+    assert.equal(parsed.readable, true);
+    assert.equal(parsed.application, "POS");
+    assert.equal(parsed.errorMessage, "Database connection failed");
+    assert.equal(parsed.needsSupportAction, false);
+    assert.match(formatScreenshotContext(parsed), /Database connection failed/);
+  });
+
+  it("analyzes a screenshot with the vision model before the support reply", async () => {
+    let usedModel = "";
+    const result = await analyzeScreenshot({
+      message: "look here",
+      image: { dataUrl: "data:image/jpeg;base64,abc" },
+      client: fakeClient(async (payload) => {
+        usedModel = payload.model;
+        assert.equal(payload.tools, undefined);
+        assert.equal(payload.messages[0].role, "system");
+        assert.equal(payload.messages[1].content[1].type, "image_url");
+        return completion(
+          '{"readable":true,"application":"POS","errorMessage":"Database connection failed","needsSupportAction":false}'
+        );
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.application, "POS");
+    assert.equal(result.errorMessage, "Database connection failed");
+    assert.equal(result.needsSupportAction, false);
     assert.equal(usedModel, "gpt-5.6-sol");
   });
 

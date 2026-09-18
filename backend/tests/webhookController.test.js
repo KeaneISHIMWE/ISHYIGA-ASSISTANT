@@ -5,6 +5,7 @@ const {
   sendGeneratedReplies,
   processTextEvents,
   IMAGE_UNREADABLE_REPLY,
+  IMAGE_UNCLEAR_REPLY,
 } = require("../src/controllers/webhookController");
 const {
   FALLBACK_REPLY,
@@ -348,8 +349,20 @@ describe("processTextEvents", () => {
           steps.push(`download:${mediaId}`);
           return { ok: true, dataUrl: "data:image/jpeg;base64,abc" };
         },
-        generateReplyFn: async ({ image }) => {
+        analyzeScreenshotFn: async ({ image }) => {
+          steps.push(`analyze:${Boolean(image && image.dataUrl)}`);
+          return {
+            ok: true,
+            readable: true,
+            application: "POS",
+            errorMessage: "Invoice failed",
+            needsSupportAction: false,
+          };
+        },
+        generateReplyFn: async ({ image, screenshotAnalysis, clientContext }) => {
           steps.push(`vision:${Boolean(image && image.dataUrl)}`);
+          assert.equal(screenshotAnalysis.application, "POS");
+          assert.match(clientContext, /SCREENSHOT ANALYSIS/);
           return { ok: true, reply: "I can see the invoice error." };
         },
         sendTextMessageFn: async () => {
@@ -363,6 +376,7 @@ describe("processTextEvents", () => {
     assert.deepEqual(steps, [
       "inbound:image",
       "download:MEDIA123",
+      "analyze:true",
       "vision:true",
       "send",
     ]);
@@ -387,6 +401,9 @@ describe("processTextEvents", () => {
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
         downloadMediaFn: async () => ({ ok: false, error: "api_error" }),
+        analyzeScreenshotFn: async () => {
+          throw new Error("should not analyze");
+        },
         generateReplyFn: async () => {
           throw new Error("should not generate");
         },
@@ -400,6 +417,163 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].sent, true);
     assert.equal(results[0].reply, IMAGE_UNREADABLE_REPLY);
+  });
+
+  it("asks for a clearer screenshot when vision cannot read the image", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "image",
+          messageId: "wamid.IMG1",
+          customerNumber: "250788000000",
+          message: "[Screenshot]",
+          mediaId: "MEDIA123",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        downloadMediaFn: async () => ({
+          ok: true,
+          dataUrl: "data:image/jpeg;base64,abc",
+        }),
+        analyzeScreenshotFn: async () => ({
+          ok: true,
+          readable: false,
+        }),
+        generateReplyFn: async () => {
+          throw new Error("should not generate");
+        },
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, IMAGE_UNCLEAR_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, IMAGE_UNCLEAR_REPLY);
+    assert.equal(ticketCalls.length, 0);
+  });
+
+  it("does not open a ticket for a screenshot how-to", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "image",
+          messageId: "wamid.IMG1",
+          customerNumber: "250788000000",
+          message: "How do I add a customer?",
+          mediaId: "MEDIA123",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        lookupClientProfileFn: async () => ({
+          ok: true,
+          promptContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+        }),
+        downloadMediaFn: async () => ({
+          ok: true,
+          dataUrl: "data:image/jpeg;base64,abc",
+        }),
+        analyzeScreenshotFn: async () => ({
+          ok: true,
+          readable: true,
+          application: "POS",
+          inferredRequest: "How to add a customer",
+          needsSupportAction: false,
+        }),
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: "Open Customers, then tap Add and fill the name.",
+          needsSupportAction: false,
+        }),
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, "Open Customers, then tap Add and fill the name.");
+          return { ok: true, outboundId: "wamid.OUT1" };
+        },
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true, customerReply: ESCALATION_REPLY };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, "Open Customers, then tap Add and fill the name.");
+    assert.equal(ticketCalls.length, 0);
+  });
+
+  it("escalates when the screenshot shows an action the AI cannot perform", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "image",
+          messageId: "wamid.IMG1",
+          customerNumber: "250788000000",
+          message: "[Screenshot]",
+          mediaId: "MEDIA123",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        lookupClientProfileFn: async () => ({
+          ok: true,
+          promptContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+        }),
+        downloadMediaFn: async () => ({
+          ok: true,
+          dataUrl: "data:image/jpeg;base64,abc",
+        }),
+        analyzeScreenshotFn: async () => ({
+          ok: true,
+          readable: true,
+          application: "POS",
+          inferredRequest: "Change POS configuration",
+          needsSupportAction: true,
+        }),
+        generateReplyFn: async ({ screenshotAnalysis }) => ({
+          ok: true,
+          reply: "I can see the issue from the screenshot. This requires a change I cannot perform.",
+          needsSupportAction: screenshotAnalysis.needsSupportAction,
+        }),
+        sendTextMessageFn: async () => ({
+          ok: true,
+          outboundId: "wamid.OUT1",
+        }),
+        persistOutbound: async () => ({ ok: true }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return {
+            ok: true,
+            ticketCreated: true,
+            customerReply: ESCALATION_REPLY,
+          };
+        },
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].reply, ESCALATION_REPLY);
+    assert.equal(ticketCalls.length, 1);
   });
 
   it("sends every contact through CARE lookup and Groq", async () => {
