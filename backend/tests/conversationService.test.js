@@ -5,7 +5,10 @@ const {
   persistOutboundReply,
   toChatHistory,
   loadRecentHistory,
+  findOrCreateActiveConversation,
+  isConversationIdle,
   HISTORY_LOAD_LIMIT,
+  CONVERSATION_IDLE_MS,
 } = require("../src/services/conversationService");
 
 describe("persistInboundEvent", () => {
@@ -33,6 +36,7 @@ describe("persistInboundEvent", () => {
           calls.push(["message", input]);
           return { id: "msg-1" };
         },
+        touchConversation: async () => ({ id: "conv-1" }),
       }
     );
 
@@ -61,6 +65,7 @@ describe("persistInboundEvent", () => {
           calls.push(input);
           return { id: "msg-1", created: true };
         },
+        touchConversation: async () => ({ id: "conv-1" }),
       }
     );
 
@@ -81,6 +86,7 @@ describe("persistInboundEvent", () => {
         findOrCreateCustomer: async () => ({ id: "cust-1" }),
         findOrCreateOpenConversation: async () => ({ id: "conv-1" }),
         createMessage: async () => ({ id: "msg-1", created: false }),
+        touchConversation: async () => ({ id: "conv-1" }),
       }
     );
 
@@ -107,6 +113,30 @@ describe("persistInboundEvent", () => {
     assert.equal(result.ok, false);
     assert.equal(result.error, "persist_failed");
   });
+
+  it("stores inbound against the canonical WhatsApp number", async () => {
+    let storedNumber = "";
+    const result = await persistInboundEvent(
+      {
+        kind: "text",
+        customerNumber: "0788000000",
+        messageId: "wamid.1",
+        message: "Hello",
+      },
+      {
+        findOrCreateCustomer: async (input) => {
+          storedNumber = input.whatsappNumber;
+          return { id: "cust-1" };
+        },
+        findOrCreateOpenConversation: async () => ({ id: "conv-1" }),
+        createMessage: async () => ({ id: "msg-1", created: true }),
+        touchConversation: async () => ({ id: "conv-1" }),
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(storedNumber, "250788000000");
+  });
 });
 
 describe("persistOutboundReply", () => {
@@ -123,6 +153,7 @@ describe("persistOutboundReply", () => {
           calls.push(input);
           return { id: "msg-2" };
         },
+        touchConversation: async () => ({ id: "conv-1" }),
       }
     );
 
@@ -199,5 +230,100 @@ describe("loadRecentHistory", () => {
     });
 
     assert.deepEqual(history, []);
+  });
+});
+
+describe("findOrCreateActiveConversation", () => {
+  it("reuses the open conversation while it is still active", async () => {
+    const result = await findOrCreateActiveConversation(
+      { customerId: "cust-1" },
+      {
+        findOpenByCustomerId: async () => ({
+          id: "conv-1",
+          last_activity_at: new Date(),
+        }),
+        closeConversation: async () => {
+          throw new Error("should not close");
+        },
+        createConversation: async () => {
+          throw new Error("should not create");
+        },
+      }
+    );
+
+    assert.equal(result.id, "conv-1");
+  });
+
+  it("starts a new conversation after idle time and keeps the earlier summary", async () => {
+    const calls = [];
+    const result = await findOrCreateActiveConversation(
+      { customerId: "cust-1" },
+      {
+        now: Date.parse("2026-09-18T12:00:00.000Z"),
+        idleMs: CONVERSATION_IDLE_MS,
+        findOpenByCustomerId: async () => ({
+          id: "conv-old",
+          summary: "POS was not connecting on all computers.",
+          last_activity_at: new Date("2026-09-17T12:00:00.000Z"),
+        }),
+        closeConversation: async (id) => {
+          calls.push(["close", id]);
+          return { id };
+        },
+        createConversation: async (input) => {
+          calls.push(["create", input.summary]);
+          return { id: "conv-new", summary: input.summary };
+        },
+      }
+    );
+
+    assert.equal(result.id, "conv-new");
+    assert.deepEqual(calls[0], ["close", "conv-old"]);
+    assert.match(calls[1][1], /POS was not connecting/);
+    assert.equal(isConversationIdle({ last_activity_at: new Date() }), false);
+  });
+
+  it("keeps Client A and Client B conversations separate", async () => {
+    const created = [];
+    await persistInboundEvent(
+      {
+        kind: "text",
+        customerNumber: "250788000001",
+        messageId: "wamid.A",
+        message: "Hello from A",
+      },
+      {
+        findOrCreateCustomer: async (input) => {
+          created.push(input.whatsappNumber);
+          return { id: `cust-${input.whatsappNumber}` };
+        },
+        findOrCreateOpenConversation: async (input) => ({
+          id: `conv-${input.customerId}`,
+        }),
+        createMessage: async () => ({ id: "msg-a", created: true }),
+        touchConversation: async () => ({}),
+      }
+    );
+    await persistInboundEvent(
+      {
+        kind: "text",
+        customerNumber: "250788000002",
+        messageId: "wamid.B",
+        message: "Hello from B",
+      },
+      {
+        findOrCreateCustomer: async (input) => {
+          created.push(input.whatsappNumber);
+          return { id: `cust-${input.whatsappNumber}` };
+        },
+        findOrCreateOpenConversation: async (input) => ({
+          id: `conv-${input.customerId}`,
+        }),
+        createMessage: async () => ({ id: "msg-b", created: true }),
+        touchConversation: async () => ({}),
+      }
+    );
+
+    assert.deepEqual(created, ["250788000001", "250788000002"]);
   });
 });

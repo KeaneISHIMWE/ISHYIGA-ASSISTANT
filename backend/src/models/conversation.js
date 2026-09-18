@@ -1,9 +1,37 @@
 const { pool, isUniqueViolation } = require("../config/db");
 
+const CONVERSATION_COLUMNS = `
+  id,
+  customer_id,
+  status,
+  summary,
+  summary_updated_at,
+  last_activity_at,
+  created_at,
+  updated_at
+`;
+
+async function findById(conversationId) {
+  if (!conversationId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT ${CONVERSATION_COLUMNS}
+      FROM conversations
+      WHERE id = $1
+    `,
+    [conversationId]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function findOpenByCustomerId(customerId) {
   const result = await pool.query(
     `
-      SELECT id, customer_id, status, created_at, updated_at
+      SELECT ${CONVERSATION_COLUMNS}
       FROM conversations
       WHERE customer_id = $1 AND status = 'open'
     `,
@@ -13,17 +41,85 @@ async function findOpenByCustomerId(customerId) {
   return result.rows[0] || null;
 }
 
-async function create({ customerId, status = "open" }) {
+async function create({ customerId, status = "open", summary = null }) {
   const result = await pool.query(
     `
-      INSERT INTO conversations (customer_id, status)
-      VALUES ($1, $2)
-      RETURNING id, customer_id, status, created_at, updated_at
+      INSERT INTO conversations (
+        customer_id,
+        status,
+        summary,
+        summary_updated_at,
+        last_activity_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        CASE WHEN $3 IS NOT NULL AND BTRIM($3) <> '' THEN NOW() ELSE NULL END,
+        NOW()
+      )
+      RETURNING ${CONVERSATION_COLUMNS}
     `,
-    [customerId, status]
+    [customerId, status, summary]
   );
 
   return result.rows[0];
+}
+
+async function close(conversationId) {
+  if (!conversationId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE conversations
+      SET status = 'closed'
+      WHERE id = $1 AND status = 'open'
+      RETURNING ${CONVERSATION_COLUMNS}
+    `,
+    [conversationId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function touch(conversationId) {
+  if (!conversationId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE conversations
+      SET last_activity_at = NOW()
+      WHERE id = $1
+      RETURNING ${CONVERSATION_COLUMNS}
+    `,
+    [conversationId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function updateSummary(conversationId, summary) {
+  if (!conversationId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE conversations
+      SET summary = $2,
+          summary_updated_at = NOW(),
+          last_activity_at = NOW()
+      WHERE id = $1
+      RETURNING ${CONVERSATION_COLUMNS}
+    `,
+    [conversationId, summary]
+  );
+
+  return result.rows[0] || null;
 }
 
 async function findOrCreateOpen({ customerId }) {
@@ -165,8 +261,12 @@ async function getStats() {
 }
 
 module.exports = {
+  findById,
   findOpenByCustomerId,
   create,
+  close,
+  touch,
+  updateSummary,
   findOrCreateOpen,
   listSummaries,
   findLatestByPhoneDigits,

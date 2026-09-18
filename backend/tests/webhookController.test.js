@@ -3,10 +3,20 @@ const assert = require("node:assert/strict");
 const {
   generateRepliesForInboundEvents,
   sendGeneratedReplies,
-  processTextEvents,
+  processTextEvents: processTextEventsImpl,
   IMAGE_UNREADABLE_REPLY,
   IMAGE_UNCLEAR_REPLY,
 } = require("../src/controllers/webhookController");
+
+async function processTextEvents(events, deps = {}) {
+  return processTextEventsImpl(events, {
+    loadConversationSummaryFn: async () => "",
+    refreshConversationMemoryFn: async () => "",
+    loadClientProfileFn: async () => ({ clientContext: "" }),
+    findOpenEscalationFn: async () => null,
+    ...deps,
+  });
+}
 const {
   FALLBACK_REPLY,
   ESCALATION_REPLY,
@@ -165,6 +175,8 @@ describe("processTextEvents", () => {
           steps.push(`outbound:${input.outboundId}`);
           return { ok: true };
         },
+        loadConversationSummaryFn: async () => "",
+        refreshConversationMemoryFn: async () => "",
       }
     );
 
@@ -180,6 +192,162 @@ describe("processTextEvents", () => {
     assert.equal(results.length, 1);
     assert.equal(results[0].persistedInbound, true);
     assert.equal(results[0].sent, true);
+  });
+
+  it("continues a follow-up using the same client's history and summary", async () => {
+    let received = null;
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.3",
+          customerNumber: "250788000000",
+          message: "I already restarted it.",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-a" }),
+        loadHistory: async () => [
+          { role: "user", content: "My POS is not connecting." },
+          {
+            role: "assistant",
+            content: "I can help you troubleshoot that. Is the issue happening on all computers?",
+          },
+          { role: "user", content: "Yes, all of them." },
+          {
+            role: "assistant",
+            content: "Please restart the POS machine and the router.",
+          },
+        ],
+        loadConversationSummaryFn: async (conversationId) => {
+          assert.equal(conversationId, "conv-a");
+          return "POS is not connecting on all computers.";
+        },
+        generateReplyFn: async (input) => {
+          received = input;
+          return { ok: true, reply: "Thanks. After the restart, is the POS still offline?" };
+        },
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT3" }),
+        persistOutbound: async () => ({ ok: true }),
+        refreshConversationMemoryFn: async () => "POS is not connecting on all computers.",
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+        }),
+        findOpenEscalationFn: async () => null,
+      }
+    );
+
+    assert.equal(results[0].sent, true);
+    assert.equal(received.history[0].content, "My POS is not connecting.");
+    assert.equal(received.conversationSummary, "POS is not connecting on all computers.");
+    assert.equal(received.message, "I already restarted it.");
+  });
+
+  it("never loads Client B history for Client A", async () => {
+    const historyByConversation = {
+      "conv-a": [{ role: "user", content: "Client A POS is down." }],
+      "conv-b": [{ role: "user", content: "Client B needs a new user." }],
+    };
+    const seen = [];
+    await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.A",
+          customerNumber: "250788000001",
+          message: "It is still down.",
+        },
+        {
+          kind: "text",
+          messageId: "wamid.B",
+          customerNumber: "250788000002",
+          message: "Please add the user.",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async (event) => ({
+          ok: true,
+          conversationId: event.customerNumber === "250788000001" ? "conv-a" : "conv-b",
+        }),
+        loadHistory: async (conversationId) => historyByConversation[conversationId],
+        loadConversationSummaryFn: async (conversationId) =>
+          conversationId === "conv-a" ? "A POS outage" : "B user request",
+        generateReplyFn: async ({ history, conversationSummary, message }) => {
+          seen.push({
+            message,
+            history: history.map((item) => item.content),
+            conversationSummary,
+          });
+          return { ok: true, reply: "Noted." };
+        },
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT" }),
+        persistOutbound: async () => ({ ok: true }),
+        refreshConversationMemoryFn: async () => "",
+        loadClientProfileFn: async () => ({ clientContext: "" }),
+        findOpenEscalationFn: async () => null,
+        escalateFn: async () => ({ ok: false }),
+      }
+    );
+
+    assert.deepEqual(seen[0].history, ["Client A POS is down."]);
+    assert.equal(seen[0].conversationSummary, "A POS outage");
+    assert.doesNotMatch(seen[0].history.join(" "), /Client B/);
+    assert.deepEqual(seen[1].history, ["Client B needs a new user."]);
+    assert.equal(seen[1].conversationSummary, "B user request");
+    assert.doesNotMatch(seen[1].history.join(" "), /Client A/);
+  });
+
+  it("does not open another ticket when the same issue is already escalated", async () => {
+    const ticketCalls = [];
+    const results = await processTextEvents(
+      [
+        {
+          kind: "text",
+          messageId: "wamid.4",
+          customerNumber: "250788000000",
+          message: "Any update on the POS?",
+        },
+      ],
+      {
+        typingMinVisibleMs: 0,
+        markReadAndShowTypingFn: async () => ({ ok: true }),
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [
+          { role: "user", content: "Please add a new customer contact." },
+          { role: "assistant", content: "I have sent this to fellow support." },
+        ],
+        loadConversationSummaryFn: async () =>
+          "Ticket already created for adding a customer contact.",
+        generateReplyFn: async () => ({
+          ok: true,
+          reply: "Fellow support is already handling the contact change.",
+          needsSupportAction: false,
+        }),
+        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT4" }),
+        persistOutbound: async () => ({ ok: true }),
+        refreshConversationMemoryFn: async () => "",
+        loadClientProfileFn: async () => ({
+          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+        }),
+        findOpenEscalationFn: async () => ({
+          ticket_id: "T-99",
+          status: "OPEN",
+          agent_name: "keanne ishimwe",
+          issue_summary: "Add a new customer contact",
+        }),
+        escalateFn: async (args) => {
+          ticketCalls.push(args);
+          return { ok: true };
+        },
+      }
+    );
+
+    assert.equal(ticketCalls.length, 0);
+    assert.match(results[0].reply, /fellow support is already handling/i);
   });
 
   it("does not persist an assistant reply that WhatsApp did not deliver", async () => {

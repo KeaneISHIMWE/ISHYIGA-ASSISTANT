@@ -82,6 +82,25 @@ describe("buildInput", () => {
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);
   });
 
+  it("appends conversation memory and customer context to the system prompt", () => {
+    const input = buildInput(
+      "Yes, it still shows the error.",
+      [
+        { role: "user", content: "I restarted the router." },
+        { role: "assistant", content: "Is the POS still showing the error?" },
+      ],
+      null,
+      "CUSTOMER CONTEXT\n- Company: Demo Shop",
+      "POS is not connecting on all computers."
+    );
+
+    assert.match(input[0].content, /CUSTOMER CONTEXT/);
+    assert.match(input[0].content, /CONVERSATION MEMORY/);
+    assert.match(input[0].content, /POS is not connecting/);
+    assert.equal(input[1].content, "I restarted the router.");
+    assert.equal(input[3].content, "Yes, it still shows the error.");
+  });
+
   it("appends customer context to the system prompt when provided", () => {
     const input = buildInput("The invoice failed", [], null, [
       "CUSTOMER CONTEXT",
@@ -160,6 +179,31 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /products and services/);
+  });
+
+  it("sends recent history and the conversation summary to OpenAI", async () => {
+    let payload = null;
+    const result = await generateReply({
+      message: "Yes, all of them.",
+      history: [
+        { role: "user", content: "My POS is not connecting." },
+        {
+          role: "assistant",
+          content: "I can help you troubleshoot that. Is the issue happening on all computers?",
+        },
+      ],
+      conversationSummary: "Client reported a POS connection problem.",
+      client: fakeClient(async (request) => {
+        payload = request;
+        return completion("Thanks. Let's check the network on each computer.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(payload.messages[1].content, "My POS is not connecting.");
+    assert.match(payload.messages[0].content, /CONVERSATION MEMORY/);
+    assert.match(payload.messages[0].content, /POS connection problem/);
+    assert.equal(payload.messages[3].content, "Yes, all of them.");
   });
 
   it("returns a fallback when the model response is empty", async () => {

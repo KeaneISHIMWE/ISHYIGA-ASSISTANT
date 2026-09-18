@@ -1,10 +1,92 @@
 const { logger } = require("../utils/logger");
 const { maskPhoneNumber } = require("./whatsappService");
+const { isUniqueViolation } = require("../config/db");
+const { toCanonicalWhatsappDigits } = require("./contactRules");
 const customerModel = require("../models/customer");
 const conversationModel = require("../models/conversation");
 const messageModel = require("../models/message");
+const {
+  seedSummaryFromMessages,
+} = require("./conversationMemoryService");
 
 const HISTORY_LOAD_LIMIT = 20;
+const CONVERSATION_IDLE_MS = 12 * 60 * 60 * 1000;
+
+function isConversationIdle(
+  conversation,
+  now = Date.now(),
+  idleMs = CONVERSATION_IDLE_MS
+) {
+  if (!conversation) {
+    return false;
+  }
+
+  const last =
+    conversation.last_activity_at ||
+    conversation.updated_at ||
+    conversation.created_at;
+  if (!last) {
+    return false;
+  }
+
+  const at = last instanceof Date ? last.getTime() : Date.parse(last);
+  if (Number.isNaN(at)) {
+    return false;
+  }
+
+  return now - at >= idleMs;
+}
+
+async function findOrCreateActiveConversation(
+  { customerId },
+  {
+    findOpenByCustomerId = conversationModel.findOpenByCustomerId,
+    closeConversation = conversationModel.close,
+    createConversation = conversationModel.create,
+    findOrCreateOpen = conversationModel.findOrCreateOpen,
+    listRecentMessages = messageModel.listRecentByConversationId,
+    now = Date.now(),
+    idleMs = CONVERSATION_IDLE_MS,
+  } = {}
+) {
+  const existing = await findOpenByCustomerId(customerId);
+  if (existing && !isConversationIdle(existing, now, idleMs)) {
+    return existing;
+  }
+
+  if (existing && isConversationIdle(existing, now, idleMs)) {
+    await closeConversation(existing.id);
+
+    let seed =
+      typeof existing.summary === "string" ? existing.summary.trim() : "";
+    if (!seed) {
+      try {
+        const recent = await listRecentMessages(existing.id, 8);
+        seed = seedSummaryFromMessages(recent);
+      } catch (_error) {
+        seed = "";
+      }
+    } else if (!/^earlier conversation/i.test(seed)) {
+      seed = `Earlier conversation:\n${seed}`;
+    }
+
+    try {
+      return await createConversation({
+        customerId,
+        status: "open",
+        summary: seed || null,
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error;
+      }
+
+      return findOpenByCustomerId(customerId);
+    }
+  }
+
+  return findOrCreateOpen({ customerId });
+}
 
 function toChatHistory(messages, { excludeWhatsappMessageId } = {}) {
   if (!Array.isArray(messages)) {
@@ -57,8 +139,9 @@ async function persistInboundEvent(
   event,
   {
     findOrCreateCustomer = customerModel.findOrCreate,
-    findOrCreateOpenConversation = conversationModel.findOrCreateOpen,
+    findOrCreateOpenConversation = findOrCreateActiveConversation,
     createMessage = messageModel.createIfNew,
+    touchConversation = conversationModel.touch,
   } = {}
 ) {
   if (
@@ -72,7 +155,9 @@ async function persistInboundEvent(
 
   try {
     const customer = await findOrCreateCustomer({
-      whatsappNumber: event.customerNumber,
+      whatsappNumber:
+        toCanonicalWhatsappDigits(event.customerNumber) ||
+        event.customerNumber,
       name: event.customerName || null,
     });
 
@@ -95,6 +180,12 @@ async function persistInboundEvent(
       message: event.message,
       messageType: event.messageType || "text",
     });
+
+    try {
+      await touchConversation(conversation.id);
+    } catch (_error) {
+      logger.error("Conversation activity update failed");
+    }
 
     logger.info("Inbound message persisted", {
       customer: maskPhoneNumber(event.customerNumber),
@@ -119,7 +210,10 @@ async function persistInboundEvent(
 
 async function persistOutboundReply(
   { conversationId, reply, outboundId = null },
-  { createMessage = messageModel.createIfNew } = {}
+  {
+    createMessage = messageModel.createIfNew,
+    touchConversation = conversationModel.touch,
+  } = {}
 ) {
   if (!conversationId || typeof reply !== "string" || !reply.trim()) {
     return { ok: false, error: "invalid_reply" };
@@ -133,6 +227,12 @@ async function persistOutboundReply(
       message: reply.trim(),
       messageType: "text",
     });
+
+    try {
+      await touchConversation(conversationId);
+    } catch (_error) {
+      logger.error("Conversation activity update failed");
+    }
 
     logger.info("Outbound message persisted", {
       hasMessage: Boolean(outbound && outbound.id),
@@ -153,5 +253,8 @@ module.exports = {
   persistOutboundReply,
   loadRecentHistory,
   toChatHistory,
+  findOrCreateActiveConversation,
+  isConversationIdle,
   HISTORY_LOAD_LIMIT,
+  CONVERSATION_IDLE_MS,
 };

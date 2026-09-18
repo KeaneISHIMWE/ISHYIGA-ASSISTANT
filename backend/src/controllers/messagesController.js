@@ -23,6 +23,10 @@ const {
   persistOutboundReply,
   loadRecentHistory,
 } = require("../services/conversationService");
+const {
+  loadConversationSummary,
+  maybeRefreshConversationMemory,
+} = require("../services/conversationMemoryService");
 const { logger } = require("../utils/logger");
 
 function describeMessageApi(_req, res) {
@@ -55,6 +59,8 @@ async function createMessage(
   {
     persistInbound = persistInboundEvent,
     loadHistory = loadRecentHistory,
+    loadConversationSummaryFn = loadConversationSummary,
+    refreshConversationMemoryFn = maybeRefreshConversationMemory,
     generateReplyFn = generateReply,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
@@ -81,6 +87,7 @@ async function createMessage(
   const inboundId = `api.${randomUUID()}`;
   let conversationId = null;
   let history = [];
+  let conversationSummary = "";
   let clientContext = "";
 
   if (phone) {
@@ -102,6 +109,13 @@ async function createMessage(
       } catch (_error) {
         logger.error("History load failed");
         history = [];
+      }
+
+      try {
+        conversationSummary = await loadConversationSummaryFn(conversationId);
+      } catch (_error) {
+        logger.error("Conversation summary load failed");
+        conversationSummary = "";
       }
     }
 
@@ -130,6 +144,7 @@ async function createMessage(
     message: trimmedMessage,
     history,
     clientContext,
+    conversationSummary,
   });
 
   const intent = classifyIntent(trimmedMessage);
@@ -193,6 +208,16 @@ async function createMessage(
       conversationId,
       reply: generated.reply,
     });
+    try {
+      await refreshConversationMemoryFn({
+        conversationId,
+        recentHistory: history,
+        currentMessage: trimmedMessage,
+        assistantReply: generated.reply,
+      });
+    } catch (_error) {
+      logger.error("Conversation memory refresh failed");
+    }
   }
 
   logger.info("Conversation route decided", {

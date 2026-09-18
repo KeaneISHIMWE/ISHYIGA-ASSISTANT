@@ -75,6 +75,41 @@ async function listRecentByConversationId(conversationId, limit = 20) {
   return result.rows.reverse();
 }
 
+async function countByConversationId(conversationId) {
+  if (!conversationId) {
+    return 0;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT COUNT(*)::int AS message_count
+      FROM messages
+      WHERE conversation_id = $1
+    `,
+    [conversationId]
+  );
+
+  return Number(result.rows[0] && result.rows[0].message_count) || 0;
+}
+
+async function countCreatedAfter(conversationId, after) {
+  if (!conversationId || !after) {
+    return 0;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT COUNT(*)::int AS message_count
+      FROM messages
+      WHERE conversation_id = $1
+        AND created_at > $2
+    `,
+    [conversationId, after]
+  );
+
+  return Number(result.rows[0] && result.rows[0].message_count) || 0;
+}
+
 async function findByWhatsappMessageId(whatsappMessageId) {
   if (!whatsappMessageId) {
     return null;
@@ -119,4 +154,6 @@ module.exports = {
   findByWhatsappMessageId,
   listByConversationId,
   listRecentByConversationId,
+  countByConversationId,
+  countCreatedAfter,
 };

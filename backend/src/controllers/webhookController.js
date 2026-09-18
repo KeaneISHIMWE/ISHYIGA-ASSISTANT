@@ -29,6 +29,10 @@ const {
   loadRecentHistory,
 } = require("../services/conversationService");
 const {
+  loadConversationSummary,
+  maybeRefreshConversationMemory,
+} = require("../services/conversationMemoryService");
+const {
   verifyWebhook,
   isValidSignature,
   processIncomingMessage,
@@ -144,6 +148,8 @@ async function processTextEvents(
   {
     persistInbound = persistInboundEvent,
     loadHistory = loadRecentHistory,
+    loadConversationSummaryFn = loadConversationSummary,
+    refreshConversationMemoryFn = maybeRefreshConversationMemory,
     generateReplyFn = generateReply,
     sendTextMessageFn = sendTextMessage,
     markReadAndShowTypingFn = markReadAndShowTyping,
@@ -246,6 +252,7 @@ async function processTextEvents(
     }
 
     let history = [];
+    let conversationSummary = "";
     if (inbound.ok && inbound.conversationId) {
       try {
         history = await loadHistory(inbound.conversationId, {
@@ -254,6 +261,15 @@ async function processTextEvents(
       } catch (_error) {
         logger.error("History load failed");
         history = [];
+      }
+
+      try {
+        conversationSummary = await loadConversationSummaryFn(
+          inbound.conversationId
+        );
+      } catch (_error) {
+        logger.error("Conversation summary load failed");
+        conversationSummary = "";
       }
     }
 
@@ -336,6 +352,7 @@ async function processTextEvents(
             history,
             image,
             clientContext,
+            conversationSummary,
             screenshotAnalysis,
           });
         }
@@ -489,6 +506,16 @@ async function processTextEvents(
         reply: generated.reply,
         outboundId: sent.outboundId || null,
       });
+      try {
+        await refreshConversationMemoryFn({
+          conversationId: inbound.conversationId,
+          recentHistory: history,
+          currentMessage: event.message,
+          assistantReply: generated.reply,
+        });
+      } catch (_error) {
+        logger.error("Conversation memory refresh failed");
+      }
     }
 
     results.push({
