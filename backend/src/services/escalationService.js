@@ -13,8 +13,8 @@ const {
 } = require("./openaiService");
 const {
   classifyIntent,
-  INTENTS,
   isActionRequiredIntent,
+  isNonTicketIntent,
 } = require("./intentService");
 
 const FELLOW_SUPPORT_REPLY =
@@ -392,17 +392,22 @@ async function resolveByAgent({
   };
 }
 
+function hasOpenSupportRequest(clientContext) {
+  return /OPEN SUPPORT REQUEST/i.test(String(clientContext || ""));
+}
+
 function shouldEscalate({ generated, clientContext, message } = {}) {
   const text = String(message || "").trim();
   const needsSupportAction = Boolean(generated && generated.needsSupportAction);
+  const modelAskedForSupport = Boolean(
+    generated &&
+      (generated.escalationRequest || generated.reply === ESCALATION_REPLY)
+  );
 
   if (text) {
     const intent = classifyIntent(text);
 
-    if (
-      isGreetingOnly(text) ||
-      (!isActionRequiredIntent(intent) && !needsSupportAction)
-    ) {
+    if (isGreetingOnly(text) || isNonTicketIntent(intent)) {
       return false;
     }
 
@@ -410,22 +415,30 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
       return false;
     }
 
+    if (
+      hasOpenSupportRequest(clientContext) &&
+      !isActionRequiredIntent(intent) &&
+      !needsSupportAction
+    ) {
+      return false;
+    }
+
+    if (
+      /^\[screenshot\]$/i.test(text) &&
+      !needsSupportAction &&
+      !isActionRequiredIntent(intent)
+    ) {
+      return false;
+    }
+
     if (isActionRequiredIntent(intent) || needsSupportAction) {
       return true;
     }
 
-    return false;
+    return modelAskedForSupport;
   }
 
-  if (needsSupportAction) {
-    return true;
-  }
-
-  if (generated && generated.escalationRequest) {
-    return true;
-  }
-
-  if (generated && generated.reply === ESCALATION_REPLY) {
+  if (needsSupportAction || modelAskedForSupport) {
     return true;
   }
 

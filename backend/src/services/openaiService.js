@@ -10,6 +10,7 @@ const {
   conversationalFallback,
   isConversationalMessage,
   isActionRequiredIntent,
+  isNonTicketIntent,
   unknownFallback,
 } = require("./intentService");
 
@@ -494,7 +495,7 @@ async function generateReply({
       : trimmedMessage
   );
   const allowTools =
-    isActionRequiredIntent(intent) ||
+    !isNonTicketIntent(intent) ||
     Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction);
 
   const startedAt = Date.now();
@@ -565,12 +566,9 @@ async function generateReply({
     let escalationRequest = extractEscalationRequest(response);
     let text = extractReplyText(response);
     const unregistered = isUnregisteredPrompt(clientContext);
-    const actionRequired =
-      isActionRequiredIntent(intent) ||
-      Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction);
     const skipEscalation =
       Boolean(escalationRequest) &&
-      (!actionRequired ||
+      (isNonTicketIntent(intent) ||
         (unregistered && !hasIdentityDetails(trimmedMessage)));
 
     if (skipEscalation) {

@@ -108,7 +108,30 @@ describe("escalation helpers", () => {
     assert.equal(
       shouldEscalate({
         message: "My POS is slow.",
-        generated: { ok: true, escalationRequest: { summary: "POS slow" } },
+        generated: { ok: true, reply: "Let's check the network first." },
+      }),
+      false
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "The shop cannot sell. POS is offline on every till after we restarted.",
+        generated: {
+          ok: true,
+          escalationRequest: { summary: "POS offline on every till after restart" },
+        },
+        clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
+      }),
+      true
+    );
+    assert.equal(
+      shouldEscalate({
+        message: "Any update on the POS?",
+        generated: {
+          ok: true,
+          escalationRequest: { summary: "POS follow-up" },
+        },
+        clientContext:
+          "CONTACT STATUS: KNOWN CUSTOMER\nOPEN SUPPORT REQUEST\nTicket: T-99",
       }),
       false
     );

@@ -137,6 +137,15 @@ function isActionRequiredIntent(intent) {
   return ACTION_REQUIRED_INTENTS.has(intent);
 }
 
+function isNonTicketIntent(intent) {
+  return (
+    intent === INTENTS.GREETING ||
+    intent === INTENTS.GENERAL_CONVERSATION ||
+    intent === INTENTS.INFORMATION_REQUEST ||
+    intent === INTENTS.FOLLOW_UP
+  );
+}
+
 function isSupportCapableIntent(intent) {
   return SUPPORT_CAPABLE_INTENTS.has(intent);
 }
@@ -187,6 +196,7 @@ module.exports = {
   classifyIntent,
   detectLanguage,
   isActionRequiredIntent,
+  isNonTicketIntent,
   isSupportCapableIntent,
   isConversationalIntent,
   isConversationalMessage,
