@@ -41,6 +41,45 @@ async function findOpenByCustomerId(customerId) {
   return result.rows[0] || null;
 }
 
+async function findLatestByCustomerId(customerId) {
+  if (!customerId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT ${CONVERSATION_COLUMNS}
+      FROM conversations
+      WHERE customer_id = $1
+      ORDER BY COALESCE(last_activity_at, updated_at, created_at) DESC,
+               created_at DESC
+      LIMIT 1
+    `,
+    [customerId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function reopen(conversationId) {
+  if (!conversationId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE conversations
+      SET status = 'open',
+          last_activity_at = NOW()
+      WHERE id = $1
+      RETURNING ${CONVERSATION_COLUMNS}
+    `,
+    [conversationId]
+  );
+
+  return result.rows[0] || null;
+}
+
 async function create({ customerId, status = "open", summary = null }) {
   const result = await pool.query(
     `
@@ -263,6 +302,8 @@ async function getStats() {
 module.exports = {
   findById,
   findOpenByCustomerId,
+  findLatestByCustomerId,
+  reopen,
   create,
   close,
   touch,

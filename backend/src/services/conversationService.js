@@ -5,11 +5,8 @@ const { toCanonicalWhatsappDigits } = require("./contactRules");
 const customerModel = require("../models/customer");
 const conversationModel = require("../models/conversation");
 const messageModel = require("../models/message");
-const {
-  seedSummaryFromMessages,
-} = require("./conversationMemoryService");
 
-const HISTORY_LOAD_LIMIT = 20;
+const HISTORY_LOAD_LIMIT = 40;
 const CONVERSATION_IDLE_MS = 12 * 60 * 60 * 1000;
 
 function isConversationIdle(
@@ -41,47 +38,34 @@ async function findOrCreateActiveConversation(
   { customerId },
   {
     findOpenByCustomerId = conversationModel.findOpenByCustomerId,
-    closeConversation = conversationModel.close,
-    createConversation = conversationModel.create,
+    findLatestByCustomerId = conversationModel.findLatestByCustomerId,
+    reopenConversation = conversationModel.reopen,
     findOrCreateOpen = conversationModel.findOrCreateOpen,
-    listRecentMessages = messageModel.listRecentByConversationId,
-    now = Date.now(),
-    idleMs = CONVERSATION_IDLE_MS,
   } = {}
 ) {
   const existing = await findOpenByCustomerId(customerId);
-  if (existing && !isConversationIdle(existing, now, idleMs)) {
+  if (existing) {
     return existing;
   }
 
-  if (existing && isConversationIdle(existing, now, idleMs)) {
-    await closeConversation(existing.id);
-
-    let seed =
-      typeof existing.summary === "string" ? existing.summary.trim() : "";
-    if (!seed) {
-      try {
-        const recent = await listRecentMessages(existing.id, 8);
-        seed = seedSummaryFromMessages(recent);
-      } catch (_error) {
-        seed = "";
-      }
-    } else if (!/^earlier conversation/i.test(seed)) {
-      seed = `Earlier conversation:\n${seed}`;
-    }
-
+  const latest = findLatestByCustomerId
+    ? await findLatestByCustomerId(customerId)
+    : null;
+  if (latest && latest.status === "closed") {
     try {
-      return await createConversation({
-        customerId,
-        status: "open",
-        summary: seed || null,
-      });
+      const reopened = await reopenConversation(latest.id);
+      if (reopened) {
+        return reopened;
+      }
     } catch (error) {
       if (!isUniqueViolation(error)) {
         throw error;
       }
 
-      return findOpenByCustomerId(customerId);
+      const open = await findOpenByCustomerId(customerId);
+      if (open) {
+        return open;
+      }
     }
   }
 

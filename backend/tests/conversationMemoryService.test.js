@@ -21,6 +21,7 @@ describe("conversation memory helpers", () => {
     assert.match(block, /CONVERSATION MEMORY/);
     assert.match(block, /POS is not connecting/);
     assert.match(block, /this client/);
+    assert.match(block, /still open/);
     assert.equal(formatConversationMemory(""), "");
     assert.equal(formatConversationMemory(null), "");
   });
@@ -121,7 +122,7 @@ describe("conversation memory helpers", () => {
       sender_type: index % 2 === 0 ? "customer" : "assistant",
       message: `older ${index + 1}`,
     }));
-    const recent = Array.from({ length: 16 }, (_, index) => ({
+    const recent = Array.from({ length: 40 }, (_, index) => ({
       sender_type: index % 2 === 0 ? "customer" : "assistant",
       message: `recent ${index + 1}`,
     }));
@@ -135,8 +136,8 @@ describe("conversation memory helpers", () => {
       },
       {
         findConversation: async () => ({ id: "conv-1", summary: "" }),
-        countMessages: async () => 36,
-        countAfter: async () => 36,
+        countMessages: async () => 60,
+        countAfter: async () => 60,
         listMessages: async () => [...older, ...recent],
         saveSummary: async (_id, text) => {
           saved = text;

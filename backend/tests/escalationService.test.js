@@ -14,7 +14,6 @@ const {
   FELLOW_SUPPORT_FAILED,
 } = require("../src/services/escalationService");
 const { ESCALATION_REPLY } = require("../src/services/openaiService");
-const { env } = require("../src/config/env");
 
 describe("escalation helpers", () => {
   it("reads the company from CARE context", () => {
@@ -171,14 +170,10 @@ describe("escalation helpers", () => {
 });
 
 describe("escalateToSupport", () => {
-  it("creates a ticket, notifies the agent, and uses fellow-support wording", async () => {
+  it("creates a VIBE ticket for the assigned support agent", async () => {
     const tickets = [];
     const messages = [];
-    const previousNotify = env.supportNotifyWhatsapp;
-    env.supportNotifyWhatsapp = "+250798687932";
-    let result;
-    try {
-    result = await escalateToSupport({
+    const result = await escalateToSupport({
       conversationId: "conv-1",
       customerNumber: "250788000000",
       message: "POS cannot connect to RRA",
@@ -204,14 +199,11 @@ describe("escalateToSupport", () => {
 
     assert.equal(result.ok, true);
     assert.equal(result.ticketCreated, true);
+    assert.equal(result.notified, false);
     assert.equal(result.customerReply, FELLOW_SUPPORT_REPLY);
     assert.equal(tickets[0].company, "TRUSTED PHARMACY LIMITED");
     assert.equal(tickets[0].agentName, "Uwimanikunda lucie");
-    assert.match(messages[0].body, /TRUSTED PHARMACY LIMITED/);
-    assert.match(messages[0].body, /TKT-22/);
-    } finally {
-      env.supportNotifyWhatsapp = previousNotify;
-    }
+    assert.equal(messages.length, 0);
   });
 
   it("reuses an open ticket instead of creating another", async () => {
@@ -235,34 +227,28 @@ describe("escalateToSupport", () => {
     assert.equal(result.customerReply, FELLOW_SUPPORT_ALREADY_OPEN);
   });
 
-  it("still notifies the agent when VIBE ticket creation fails", async () => {
-    const previousNotify = env.supportNotifyWhatsapp;
-    env.supportNotifyWhatsapp = "+250792431896";
+  it("keeps a local escalation when VIBE ticket creation fails", async () => {
     const messages = [];
-    let result;
-    try {
-      result = await escalateToSupport({
-        customerNumber: "250788000000",
-        message: "Need help",
-        findOpenByIssueFn: async () => null,
-        findAssignedAgentFn: async () => ({ support_agent: "keanne ishimwe" }),
-        createTicketFn: async () => ({ ok: false, error: "not_configured" }),
-        createEscalationFn: async (row) => ({ id: "esc-2", ...row }),
-        updateEscalationFn: async () => ({ id: "esc-2" }),
-        sendTextMessageFn: async (payload) => {
-          messages.push(payload);
-          return { ok: true, outboundId: "wamid.1" };
-        },
-      });
-    } finally {
-      env.supportNotifyWhatsapp = previousNotify;
-    }
+    const result = await escalateToSupport({
+      customerNumber: "250788000000",
+      message: "Need help",
+      findOpenByIssueFn: async () => null,
+      findAssignedAgentFn: async () => ({ support_agent: "Uwimanikunda lucie" }),
+      createTicketFn: async () => ({ ok: false, error: "not_configured" }),
+      createEscalationFn: async (row) => ({ id: "esc-2", ...row }),
+      updateEscalationFn: async () => ({ id: "esc-2" }),
+      sendTextMessageFn: async (payload) => {
+        messages.push(payload);
+        return { ok: true, outboundId: "wamid.1" };
+      },
+    });
 
     assert.equal(result.ok, true);
     assert.equal(result.ticketCreated, false);
-    assert.equal(result.notified, true);
+    assert.equal(result.notified, false);
+    assert.equal(result.agentName, "Uwimanikunda lucie");
     assert.equal(result.customerReply, FELLOW_SUPPORT_REPLY);
-    assert.equal(messages.length, 1);
+    assert.equal(messages.length, 0);
   });
 });
 

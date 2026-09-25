@@ -25,9 +25,9 @@ describe("phoneLookupCandidates", () => {
       "0781111111",
       "250781111111",
     ]);
-    assert.deepEqual(phoneLookupCandidates("+250792431896"), [
-      "250792431896",
-      "0792431896",
+    assert.deepEqual(phoneLookupCandidates("+250788880066"), [
+      "250788880066",
+      "0788880066",
     ]);
   });
 

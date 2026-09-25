@@ -1,6 +1,4 @@
-const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
-const { toCanonicalWhatsappDigits } = require("./contactRules");
 const { toAgentId } = require("./supportService");
 const supportModel = require("../models/support");
 const escalationModel = require("../models/escalation");
@@ -79,13 +77,11 @@ function resolvePriority(requested, text) {
 }
 
 function getNotifyNumber() {
-  return toCanonicalWhatsappDigits(env.supportNotifyWhatsapp);
+  return "";
 }
 
-function isAgentNumber(phoneNumber) {
-  const notify = getNotifyNumber();
-  const incoming = toCanonicalWhatsappDigits(phoneNumber);
-  return Boolean(notify && incoming && notify === incoming);
+function isAgentNumber(_phoneNumber) {
+  return false;
 }
 
 function isCompletionMessage(message) {
@@ -317,7 +313,9 @@ async function escalateToSupport({
       });
     }
   } else if (!notifyNumber) {
-    logger.warn("Support agent WhatsApp notification skipped — SUPPORT_NOTIFY_WHATSAPP is not configured");
+    logger.info("Support request assigned to VIBE for the real support agent", {
+      agentName: agentName || "unassigned",
+    });
   }
 
   if (row && row.id) {

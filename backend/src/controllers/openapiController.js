@@ -42,7 +42,7 @@ function getOpenApi(req, res) {
               name: "phone",
               in: "query",
               required: false,
-              schema: { type: "string", example: "250792431896" },
+              schema: { type: "string", example: "250788000000" },
               description: "WhatsApp number. Spaces and + are ignored.",
             },
           ],
@@ -93,7 +93,7 @@ function getOpenApi(req, res) {
                     },
                     phone: {
                       type: "string",
-                      example: "250792431896",
+                      example: "250788000000",
                     },
                     name: {
                       type: "string",

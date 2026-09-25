@@ -254,33 +254,59 @@ describe("findOrCreateActiveConversation", () => {
     assert.equal(result.id, "conv-1");
   });
 
-  it("starts a new conversation after idle time and keeps the earlier summary", async () => {
-    const calls = [];
+  it("keeps the same conversation open after idle time", async () => {
     const result = await findOrCreateActiveConversation(
       { customerId: "cust-1" },
       {
-        now: Date.parse("2026-09-18T12:00:00.000Z"),
-        idleMs: CONVERSATION_IDLE_MS,
         findOpenByCustomerId: async () => ({
           id: "conv-old",
           summary: "POS was not connecting on all computers.",
           last_activity_at: new Date("2026-09-17T12:00:00.000Z"),
         }),
-        closeConversation: async (id) => {
-          calls.push(["close", id]);
-          return { id };
+        closeConversation: async () => {
+          throw new Error("should not close");
         },
-        createConversation: async (input) => {
-          calls.push(["create", input.summary]);
-          return { id: "conv-new", summary: input.summary };
+        createConversation: async () => {
+          throw new Error("should not create");
         },
       }
     );
 
-    assert.equal(result.id, "conv-new");
-    assert.deepEqual(calls[0], ["close", "conv-old"]);
-    assert.match(calls[1][1], /POS was not connecting/);
+    assert.equal(result.id, "conv-old");
     assert.equal(isConversationIdle({ last_activity_at: new Date() }), false);
+    assert.equal(
+      isConversationIdle(
+        { last_activity_at: new Date("2026-09-17T12:00:00.000Z") },
+        Date.parse("2026-09-18T12:00:00.000Z"),
+        CONVERSATION_IDLE_MS
+      ),
+      true
+    );
+  });
+
+  it("reopens the latest closed conversation so history stays on the same session", async () => {
+    const calls = [];
+    const result = await findOrCreateActiveConversation(
+      { customerId: "cust-1" },
+      {
+        findOpenByCustomerId: async () => null,
+        findLatestByCustomerId: async () => ({
+          id: "conv-closed",
+          status: "closed",
+          summary: "Earlier POS issue",
+        }),
+        reopenConversation: async (id) => {
+          calls.push(id);
+          return { id, status: "open", summary: "Earlier POS issue" };
+        },
+        findOrCreateOpen: async () => {
+          throw new Error("should not create");
+        },
+      }
+    );
+
+    assert.equal(result.id, "conv-closed");
+    assert.deepEqual(calls, ["conv-closed"]);
   });
 
   it("keeps Client A and Client B conversations separate", async () => {

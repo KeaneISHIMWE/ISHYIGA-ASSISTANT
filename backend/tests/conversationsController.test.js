@@ -154,7 +154,7 @@ describe("conversationsController", () => {
   it("returns 404 when no conversation exists for the phone", async () => {
     const res = mockRes();
     await getConversationByPhone(
-      { query: { phone: "250792431896" } },
+      { query: { phone: "250788000000" } },
       res,
       {
         findLatestByPhoneDigits: async () => null,
