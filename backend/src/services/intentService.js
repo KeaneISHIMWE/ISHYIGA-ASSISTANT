@@ -140,9 +140,7 @@ function isActionRequiredIntent(intent) {
 function isNonTicketIntent(intent) {
   return (
     intent === INTENTS.GREETING ||
-    intent === INTENTS.GENERAL_CONVERSATION ||
-    intent === INTENTS.INFORMATION_REQUEST ||
-    intent === INTENTS.FOLLOW_UP
+    intent === INTENTS.GENERAL_CONVERSATION
   );
 }
 

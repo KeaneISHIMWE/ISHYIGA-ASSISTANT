@@ -6,6 +6,7 @@ const {
   formatConversationMemory,
 } = require("./conversationMemoryService");
 const {
+  INTENTS,
   classifyIntent,
   conversationalFallback,
   isConversationalMessage,
@@ -495,8 +496,11 @@ async function generateReply({
       : trimmedMessage
   );
   const allowTools =
-    !isNonTicketIntent(intent) ||
-    Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction);
+    screenshotAnalysis && screenshotAnalysis.needsSupportAction === false
+      ? isActionRequiredIntent(intent)
+      : (!isNonTicketIntent(intent) && intent !== INTENTS.INFORMATION_REQUEST) ||
+        Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction) ||
+        isActionRequiredIntent(intent);
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {
@@ -569,6 +573,8 @@ async function generateReply({
     const skipEscalation =
       Boolean(escalationRequest) &&
       (isNonTicketIntent(intent) ||
+        (intent === INTENTS.INFORMATION_REQUEST &&
+          (!screenshotAnalysis || screenshotAnalysis.needsSupportAction !== true)) ||
         (unregistered && !hasIdentityDetails(trimmedMessage)));
 
     if (skipEscalation) {

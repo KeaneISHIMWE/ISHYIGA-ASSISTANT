@@ -12,6 +12,7 @@ const {
   hasIdentityDetails,
 } = require("./openaiService");
 const {
+  INTENTS,
   classifyIntent,
   isActionRequiredIntent,
   isNonTicketIntent,
@@ -185,10 +186,17 @@ async function escalateToSupport({
     `${issueSummary} ${message || ""} ${why || ""}`
   );
 
-  const existing = await findOpenByIssueFn({
-    customerNumber,
-    issueKey,
-  });
+  let existing = null;
+  try {
+    existing = await findOpenByIssueFn({
+      customerNumber,
+      issueKey,
+    });
+  } catch (error) {
+    logger.error("Open issue lookup failed", {
+      error: error && error.message ? String(error.message).slice(0, 120) : "unhandled",
+    });
+  }
 
   if (existing) {
     logger.info("Escalation reused existing ticket", {
@@ -401,13 +409,24 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
   const needsSupportAction = Boolean(generated && generated.needsSupportAction);
   const modelAskedForSupport = Boolean(
     generated &&
-      (generated.escalationRequest || generated.reply === ESCALATION_REPLY)
+      (generated.escalationRequest ||
+        generated.reply === ESCALATION_REPLY ||
+        generated.reply === FELLOW_SUPPORT_REPLY ||
+        generated.reply === FELLOW_SUPPORT_REGISTRATION)
   );
 
   if (text) {
     const intent = classifyIntent(text);
 
     if (isGreetingOnly(text) || isNonTicketIntent(intent)) {
+      return false;
+    }
+
+    if (
+      intent === INTENTS.INFORMATION_REQUEST &&
+      !needsSupportAction &&
+      !isActionRequiredIntent(intent)
+    ) {
       return false;
     }
 

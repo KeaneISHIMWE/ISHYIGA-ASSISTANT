@@ -18,7 +18,7 @@ const TICKET_REASONS = {
 
 /**
  * Maps a reason code to a ticket subject line.
- * @param {string} reason
+ * @param {string} reasonN
  * @returns {string}
  */
 function buildSubject(reason) {
