@@ -336,7 +336,7 @@ describe("processTextEvents", () => {
         findOpenEscalationFn: async () => ({
           ticket_id: "T-99",
           status: "OPEN",
-          agent_name: "keanne ishimwe",
+          agent_name: "Uwimanikunda lucie",
           issue_summary: "Add a new customer contact",
         }),
         escalateFn: async (args) => {
@@ -1014,7 +1014,7 @@ describe("processTextEvents", () => {
         {
           kind: "text",
           messageId: "wamid.hello",
-          customerNumber: "250792431896",
+          customerNumber: "250788000000",
           message: "Hello",
         },
       ],
@@ -1062,7 +1062,7 @@ describe("processTextEvents", () => {
         {
           kind: "text",
           messageId: "wamid.how",
-          customerNumber: "250792431896",
+          customerNumber: "250788000000",
           message: "How are you",
         },
       ],
@@ -1103,7 +1103,7 @@ describe("processTextEvents", () => {
         {
           kind: "text",
           messageId: "wamid.pos",
-          customerNumber: "250792431896",
+          customerNumber: "250788000000",
           message: "I have issues on pos",
         },
       ],
@@ -1251,7 +1251,7 @@ describe("processTextEvents", () => {
         persistOutbound: async () => ({ ok: true }),
         escalateFn: async (args) => {
           ticketCalls.push(args);
-          return { ok: true, customerReply: ESCALATION_REPLY, agentName: "keanne ishimwe" };
+          return { ok: true, customerReply: ESCALATION_REPLY, agentName: "Uwimanikunda lucie" };
         },
         findOpenEscalationFn: async () => null,
       }

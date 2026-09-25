@@ -34,7 +34,7 @@ function describeMessageApi(_req, res) {
     error: "Use POST /api/messages with a JSON body",
     example: {
       message: "Hello, what services do you offer?",
-      phone: "250792431896",
+      phone: "250788000000",
     },
   });
 }
