@@ -5,7 +5,7 @@ const conversationModel = require("../models/conversation");
 const messageModel = require("../models/message");
 
 const MAX_SUMMARY_CHARS = 2500;
-const MEMORY_RECENT_LIMIT = 16;
+const MEMORY_RECENT_LIMIT = 40;
 const SUMMARY_AFTER_MESSAGES = 16;
 const SUMMARY_REFRESH_AFTER = 8;
 const SUMMARY_SOURCE_LIMIT = 60;
@@ -74,7 +74,7 @@ function formatConversationMemory(summary) {
     "CONVERSATION MEMORY",
     "Earlier in this client's conversation (do not invent extra details):",
     text.slice(0, MAX_SUMMARY_CHARS),
-    "Use this together with the recent chat messages. Do not ask the client to repeat facts already listed here unless you need confirmation. This memory belongs only to this client.",
+    "This conversation is still open. Use this together with the recent chat messages. Do not ask the client to repeat facts already listed here unless you need confirmation. This memory belongs only to this client.",
   ].join("\n");
 }
 

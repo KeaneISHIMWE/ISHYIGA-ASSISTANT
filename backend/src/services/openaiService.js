@@ -16,7 +16,7 @@ const {
 } = require("./intentService");
 
 const REQUEST_TIMEOUT_MS = 60_000;
-const MAX_HISTORY_MESSAGES = 16;
+const MAX_HISTORY_MESSAGES = 40;
 const FALLBACK_REPLY =
   "Sorry, I didn't quite understand that. Could you explain what you need help with?";
 const ESCALATION_REPLY =
