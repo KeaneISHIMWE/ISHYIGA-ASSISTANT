@@ -70,9 +70,11 @@ const IDENTITY_DETAIL_PATTERN =
   /\b(ltd|limited|pharmacy|sarl|inc\.?|company|clinic|shop|store|hotel|school|hospital|i(?:'m| am)|my name is|nitwa|nziwa|twitwa)\b/i;
 
 function createClient(apiKey) {
+  const baseURL = (env.openaiBaseUrl || "").trim();
   return new OpenAI({
     apiKey,
     timeout: REQUEST_TIMEOUT_MS,
+    ...(baseURL ? { baseURL } : {}),
   });
 }
 

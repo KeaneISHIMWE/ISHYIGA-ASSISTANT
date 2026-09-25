@@ -418,7 +418,18 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
   if (text) {
     const intent = classifyIntent(text);
 
+    logger.info("shouldEscalate evaluated", {
+      intent,
+      needsSupportAction,
+      modelAskedForSupport,
+      isActionRequired: isActionRequiredIntent(intent),
+      hasOpenTicket: hasOpenSupportRequest(clientContext),
+      isUnregistered: isUnregisteredContext(clientContext),
+      messageSnippet: text.slice(0, 80),
+    });
+
     if (isGreetingOnly(text) || isNonTicketIntent(intent)) {
+      logger.info("shouldEscalate → false (greeting/conversational)", { intent });
       return false;
     }
 
@@ -427,10 +438,12 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
       !needsSupportAction &&
       !isActionRequiredIntent(intent)
     ) {
+      logger.info("shouldEscalate → false (information request only)", { intent });
       return false;
     }
 
     if (isUnregisteredContext(clientContext) && !hasIdentityDetails(text)) {
+      logger.info("shouldEscalate → false (unregistered, no identity details yet)");
       return false;
     }
 
@@ -439,6 +452,7 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
       !isActionRequiredIntent(intent) &&
       !needsSupportAction
     ) {
+      logger.info("shouldEscalate → false (open ticket exists, not a new action-required issue)", { intent });
       return false;
     }
 
@@ -447,20 +461,30 @@ function shouldEscalate({ generated, clientContext, message } = {}) {
       !needsSupportAction &&
       !isActionRequiredIntent(intent)
     ) {
+      logger.info("shouldEscalate → false (screenshot-only, no support action needed)");
       return false;
     }
 
     if (isActionRequiredIntent(intent) || needsSupportAction) {
+      logger.info("shouldEscalate → TRUE (action-required intent or needsSupportAction)", { intent, needsSupportAction });
       return true;
     }
 
-    return modelAskedForSupport;
+    if (modelAskedForSupport) {
+      logger.info("shouldEscalate → TRUE (model called escalate_to_support tool)", { intent });
+      return true;
+    }
+
+    logger.info("shouldEscalate → false (no escalation trigger matched)", { intent });
+    return false;
   }
 
   if (needsSupportAction || modelAskedForSupport) {
+    logger.info("shouldEscalate → TRUE (no text, needsSupportAction or model tool call)", { needsSupportAction, modelAskedForSupport });
     return true;
   }
 
+  logger.info("shouldEscalate → false (empty message, no triggers)");
   return false;
 }
 
