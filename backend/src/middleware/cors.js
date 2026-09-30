@@ -2,7 +2,6 @@ const PUBLIC_READ_PREFIXES = [
   "/api/conversations",
   "/api/messages",
   "/api/dashboard",
-  "/api/support",
   "/api/openapi.json",
   "/api/health",
 ];
