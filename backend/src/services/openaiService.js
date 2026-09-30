@@ -527,7 +527,13 @@ async function generateReply({
           clientContext,
           conversationSummary
         ),
-        ...(withTools ? { tools: [ESCALATE_TOOL], tool_choice: "auto" } : {}),
+        ...(withTools
+          ? {
+              tools: [ESCALATE_TOOL],
+              tool_choice: "auto",
+              reasoning_effort: "none",
+            }
+          : {}),
       },
       { timeout: REQUEST_TIMEOUT_MS }
     );

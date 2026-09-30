@@ -310,6 +310,7 @@ describe("generateReply", () => {
       message: "Please get support to fix the RRA connection",
       client: fakeClient(async (payload) => {
         assert.equal(payload.tools[0].function.name, "escalate_to_support");
+        assert.equal(payload.reasoning_effort, "none");
         return {
           choices: [
             {
