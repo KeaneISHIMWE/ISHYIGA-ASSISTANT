@@ -21,6 +21,34 @@ const labels = {
   TROUBLESHOOTING: "Troubleshooting",
 };
 
+function passwordField(name, label, { minlength = 0 } = {}) {
+  return `
+    <label>${label}</label>
+    <div class="password-field">
+      <input name="${name}" type="password" required ${minlength ? `minlength="${minlength}"` : ""} />
+      <button type="button" class="eye" data-eye aria-label="Show password">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/>
+          <circle cx="12" cy="12" r="3"/>
+          <path class="slash" d="M4 20L20 4"/>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+function bindEyes(root = document) {
+  root.querySelectorAll("[data-eye]").forEach((button) => {
+    button.onclick = () => {
+      const input = button.parentElement.querySelector("input");
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      button.classList.toggle("open", !showing);
+      button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    };
+  });
+}
+
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -113,10 +141,12 @@ function authView() {
   return `
     <div class="auth-shell">
       <section class="auth-story">
+        <div class="brand">Ishyiga AI Knowledge Studio</div>
         <div>
-          <p class="brand">Ishyiga AI Knowledge Studio</p>
-          <h1><span class="fun-line">Teach me any thing you want, I won't dissapoint you</span></h1>
+          <h1>Teach the assistant how Ishyiga Software works.</h1>
+          <p>Support staff and developers submit prompts, answers, and workflows. An administrator reviews every item before it becomes trusted AI knowledge.</p>
         </div>
+        <p>Anonymous contributions are not accepted.</p>
       </section>
       <section class="auth-card">
         <form class="panel" id="auth-form">
@@ -126,7 +156,7 @@ function authView() {
           </div>
           ${login ? "" : `<label>Full name</label><input name="name" required />`}
           <label>Email</label><input name="email" type="email" required />
-          <label>Password</label><input name="password" type="password" minlength="8" required />
+          ${passwordField("password", "Password", { minlength: 8 })}
           ${login ? "" : `<label>Phone (optional)</label><input name="phone" />`}
           <p class="muted">${login ? "Use the account you registered with." : "The first account becomes the administrator. Later accounts are contributors."}</p>
           <div class="error" id="form-error"></div>
@@ -310,11 +340,18 @@ function peopleView() {
 function profileView() {
   const user = state.user;
   return `<div class="detail"><h1>Profile</h1><p><strong>${esc(user.name)}</strong></p><p>${esc(user.email)}</p><p>${esc(user.phone || "No phone")}</p><p><span class="badge">${esc(user.role)}</span></p><p class="muted">Account created ${esc(when(user.createdAt))}</p>
+    <h2>Change email</h2>
+    <form id="email-form">
+      <label>New email</label><input name="email" type="email" value="${esc(user.email)}" required />
+      ${passwordField("password", "Current password")}
+      <div class="error" id="email-error"></div>
+      <div class="actions"><button class="primary" type="submit">Update email</button></div>
+    </form>
     <h2>Change password</h2>
     <form id="password-form">
-      <label>Current password</label><input name="currentPassword" type="password" required />
-      <label>New password</label><input name="newPassword" type="password" minlength="8" required />
-      <div class="error" id="form-error"></div>
+      ${passwordField("currentPassword", "Current password")}
+      ${passwordField("newPassword", "New password", { minlength: 8 })}
+      <div class="error" id="password-error"></div>
       <div class="actions"><button class="primary" type="submit">Update password</button></div>
     </form>
   </div>`;
@@ -365,6 +402,7 @@ function bindAuth() {
       document.getElementById("form-error").textContent = error.message;
     }
   };
+  bindEyes();
 }
 
 function bindApp() {
@@ -396,10 +434,29 @@ function bindApp() {
         passwordForm.reset();
         toast("Password updated");
       } catch (error) {
-        document.getElementById("form-error").textContent = error.message;
+        document.getElementById("password-error").textContent = error.message;
       }
     };
   }
+  const emailForm = document.getElementById("email-form");
+  if (emailForm) {
+    emailForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const payload = Object.fromEntries(new FormData(emailForm).entries());
+      try {
+        const result = await api("/api/studio/auth/email", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.user = result.user;
+        toast("Email updated");
+        render();
+      } catch (error) {
+        document.getElementById("email-error").textContent = error.message;
+      }
+    };
+  }
+  bindEyes();
   document.querySelectorAll("[data-type]").forEach((button) => {
     button.onclick = () => {
       state.type = button.dataset.type;

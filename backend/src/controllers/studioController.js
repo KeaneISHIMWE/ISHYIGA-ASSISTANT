@@ -129,6 +129,36 @@ async function login(req, res) {
   return sendAuth(res, user);
 }
 
+async function changeEmail(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) {
+    return undefined;
+  }
+
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+  const password = (req.body && req.body.password) || "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "A valid email is required" });
+  }
+
+  const stored = await studioModel.findUserByEmail(user.email);
+  if (!stored || !verifyPassword(password, stored.password_hash)) {
+    return res.status(401).json({ error: "Current password is incorrect" });
+  }
+  if (email === user.email) {
+    return res.json({ user });
+  }
+
+  const taken = await studioModel.findUserByEmail(email);
+  if (taken) {
+    return res.status(409).json({ error: "An account with this email already exists" });
+  }
+
+  const updated = await studioModel.updateEmail(user.id, email);
+  await writeAudit(user, "email_changed", "user", user.id, {});
+  return res.json({ user: studioModel.publicUser(updated) });
+}
+
 async function changePassword(req, res) {
   const user = await requireUser(req, res);
   if (!user) {
@@ -455,6 +485,7 @@ module.exports = {
   login,
   logout,
   changePassword,
+  changeEmail,
   me,
   createContribution,
   myContributions,
