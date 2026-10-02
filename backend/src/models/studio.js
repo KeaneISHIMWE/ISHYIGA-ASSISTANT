@@ -13,6 +13,7 @@ const CONTRIBUTION_COLUMNS = `
   c.contributor_id,
   c.type,
   c.title,
+  c.encountered,
   c.question,
   c.answer,
   c.system_prompt,
@@ -147,12 +148,12 @@ async function insertContribution(record) {
       INSERT INTO studio_contributions (
         contributor_id, type, title, question, answer, system_prompt,
         feature, module, description, steps, symptoms, cause, solution,
-        escalate_when, priority, notes, attachment_note, status
+        escalate_when, priority, notes, attachment_note, encountered, status
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, 'PENDING'
+        $14, $15, $16, $17, $18, 'PENDING'
       )
       RETURNING id
     `,
@@ -174,6 +175,7 @@ async function insertContribution(record) {
       record.priority,
       record.notes,
       record.attachmentNote,
+      record.encountered,
     ]
   );
   return findContributionById(result.rows[0].id);
@@ -266,6 +268,7 @@ async function updateContribution(id, record) {
         priority = $14,
         notes = $15,
         attachment_note = $16,
+        encountered = $17,
         status = CASE WHEN status = 'NEEDS_REVISION' THEN 'PENDING' ELSE status END
       WHERE id = $1
     `,
@@ -286,6 +289,7 @@ async function updateContribution(id, record) {
       record.priority,
       record.notes,
       record.attachmentNote,
+      record.encountered,
     ]
   );
   return findContributionById(id);

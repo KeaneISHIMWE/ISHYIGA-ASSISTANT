@@ -74,7 +74,8 @@ function validateContribution(body = {}, { partial = false } = {}) {
     escalateWhen: clean(body.escalateWhen || body.escalate_when, 2000) || null,
     priority: clean(body.priority, 40) || null,
     notes: clean(body.notes, 4000) || null,
-    attachmentNote: clean(body.attachmentNote || body.attachment_note, 2000) || null,
+    attachmentNote: clean(body.attachmentNote || body.attachment_note, 900000) || null,
+    encountered: clean(body.encountered, 4000) || null,
   };
 
   if (!record.title) {
@@ -92,6 +93,9 @@ function validateContribution(body = {}, { partial = false } = {}) {
   }
   if (type === "TROUBLESHOOTING" && (!record.question || !record.solution)) {
     return "Problem and solution are required";
+  }
+  if (!record.encountered) {
+    return "Describe the question or problem you are trying to solve";
   }
 
   return record;
@@ -128,6 +132,7 @@ function knowledgeContent(contribution) {
     contribution.solution ? `Solution:\n${contribution.solution}` : "",
     contribution.escalate_when ? `Escalate when:\n${contribution.escalate_when}` : "",
     contribution.notes ? `Notes:\n${contribution.notes}` : "",
+    contribution.encountered ? `What they encountered:\n${contribution.encountered}` : "",
   ].filter(Boolean);
   return lines.join("\n\n");
 }

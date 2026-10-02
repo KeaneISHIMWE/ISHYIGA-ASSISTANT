@@ -19,6 +19,7 @@ if (env.nodeEnv === "production") {
 
 app.use(
   express.json({
+    limit: "2mb",
     verify: (req, _res, buffer) => {
       req.rawBody = buffer;
     },

@@ -32,6 +32,7 @@ describe("studio contributions", () => {
       title: "Add customer",
       question: "How do I create a customer?",
       answer: "Open Customers and choose Add Customer.",
+      encountered: "The cashier could not find where to add a customer.",
     });
     assert.equal(record.question, "How do I create a customer?");
   });

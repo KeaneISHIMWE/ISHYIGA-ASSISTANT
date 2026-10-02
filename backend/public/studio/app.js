@@ -245,6 +245,12 @@ function newView() {
       <div class="types">
         ${Object.entries(labels).map(([id, label]) => `<button type="button" class="type ${type === id ? "active" : ""}" data-type="${id}"><strong>${label}</strong></button>`).join("")}
       </div>
+      <label>What you are trying to solve</label>
+      <p class="muted">Describe the question or problem you encountered. This is what you are correcting or teaching the assistant.</p>
+      <textarea name="encountered" required placeholder="Example: A cashier asked how to add a customer and the steps were not clear."></textarea>
+      <label>Upload what you encountered</label>
+      <p class="muted">Optional screenshot of the question, error, or screen.</p>
+      <input name="problemFile" type="file" accept="image/*" />
       ${fields[type]}
       <div class="error" id="form-error"></div>
       <div class="actions"><button class="primary" type="submit">Push contribution</button></div>
@@ -293,6 +299,7 @@ function detailView() {
       <article class="detail">
         <span class="badge ${esc(row.status)}">${esc(row.status)}</span>
         <p class="muted">${esc(labels[row.type])} · ${esc(when(row.created_at))}</p>
+        ${block("What you are trying to solve", row.encountered)}
         ${block("Question / problem", row.question)}
         ${block("Answer", row.answer)}
         ${block("System prompt", row.system_prompt)}
@@ -305,7 +312,7 @@ function detailView() {
         ${block("Solution", row.solution)}
         ${block("Escalate when", row.escalate_when)}
         ${block("Notes", row.notes)}
-        ${block("Attachment", row.attachment_note)}
+        ${attachmentBlock(row.attachment_note)}
         ${block("Admin feedback", row.admin_notes)}
         <p class="muted">Reviewed ${esc(when(row.reviewed_at))}${row.reviewer_name ? ` by ${esc(row.reviewer_name)}` : ""}</p>
         ${editable ? `<form id="edit-form"><label>Update title</label><input name="title" value="${esc(row.title)}" /><div class="actions"><button class="primary">Save revision</button></div><div class="error" id="form-error"></div></form>` : ""}
@@ -324,6 +331,14 @@ function detailView() {
       </aside>` : ""}
     </div>
   `;
+}
+
+function attachmentBlock(value) {
+  if (!value) return "";
+  if (String(value).startsWith("data:image/")) {
+    return `<h3>What you uploaded</h3><img alt="Uploaded problem" src="${esc(value)}" style="max-width:100%;border-radius:12px" />`;
+  }
+  return block("What you uploaded", value);
 }
 
 function block(label, value) {
@@ -482,7 +497,25 @@ function bindApp() {
     contrib.onsubmit = async (event) => {
       event.preventDefault();
       const payload = Object.fromEntries(new FormData(contrib).entries());
+      delete payload.problemFile;
       payload.type = state.type;
+      const file = contrib.querySelector("[name=problemFile]").files[0];
+      if (file) {
+        if (!file.type.startsWith("image/")) {
+          document.getElementById("form-error").textContent = "Upload an image of the problem.";
+          return;
+        }
+        if (file.size > 700000) {
+          document.getElementById("form-error").textContent = "That image is too large. Use a screenshot under 700 KB.";
+          return;
+        }
+        payload.attachmentNote = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("Could not read the image"));
+          reader.readAsDataURL(file);
+        });
+      }
       try {
         const result = await api("/api/studio/contributions", { method: "POST", body: JSON.stringify(payload) });
         toast("Contribution sent for review");

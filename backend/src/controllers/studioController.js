@@ -280,6 +280,7 @@ async function editContribution(req, res) {
     escalateWhen: source.escalateWhen ?? source.escalate_when ?? existing.escalate_when,
     priority: source.priority ?? existing.priority,
     notes: source.notes ?? existing.notes,
+    encountered: source.encountered ?? existing.encountered,
     attachmentNote: source.attachmentNote ?? source.attachment_note ?? existing.attachment_note,
   });
   if (typeof parsed === "string") {
