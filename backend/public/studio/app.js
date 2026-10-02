@@ -94,13 +94,15 @@ async function boot() {
   try {
     const data = await api("/api/studio/auth/me");
     state.user = data.user;
-    state.view = "home";
+    state.view = data.user.role === "ADMIN" ? "home" : "new";
   } catch (_error) {
     state.user = null;
     state.view = "login";
   }
   const hash = location.hash.replace("#", "");
-  if (hash && state.user) state.view = hash;
+  if (hash && state.user) {
+    state.view = state.user.role !== "ADMIN" && hash === "home" ? "new" : hash;
+  }
   render();
 }
 
@@ -111,7 +113,7 @@ function navButton(id, label) {
 function shell(content) {
   const user = state.user;
   const contributor = `
-    ${navButton("home", "Dashboard")}
+    ${user && user.role === "ADMIN" ? navButton("home", "Dashboard") : ""}
     ${navButton("new", "New contribution")}
     ${navButton("mine", "My contributions")}
     ${navButton("knowledge", "Knowledge base")}
@@ -395,7 +397,7 @@ function bindAuth() {
         body: JSON.stringify(data),
       });
       state.user = result.user;
-      state.view = "home";
+      state.view = result.user.role === "ADMIN" ? "home" : "new";
       toast(state.mode === "login" ? "Welcome back" : "Account created");
       await refresh();
     } catch (error) {
