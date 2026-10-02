@@ -94,16 +94,18 @@ async function boot() {
   try {
     const data = await api("/api/studio/auth/me");
     state.user = data.user;
-    state.view = data.user.role === "ADMIN" ? "home" : "new";
+    state.view = "home";
   } catch (_error) {
     state.user = null;
     state.view = "login";
   }
   const hash = location.hash.replace("#", "");
-  if (hash && state.user) {
-    state.view = state.user.role !== "ADMIN" && hash === "home" ? "new" : hash;
+  if (hash && state.user) state.view = hash;
+  if (state.user) {
+    await refresh();
+  } else {
+    render();
   }
-  render();
 }
 
 function navButton(id, label) {
@@ -113,7 +115,7 @@ function navButton(id, label) {
 function shell(content) {
   const user = state.user;
   const contributor = `
-    ${user && user.role === "ADMIN" ? navButton("home", "Dashboard") : ""}
+    ${navButton("home", "Dashboard")}
     ${navButton("new", "New contribution")}
     ${navButton("mine", "My contributions")}
     ${navButton("knowledge", "Knowledge base")}
@@ -176,10 +178,20 @@ function homeView() {
       <p>Contribute your knowledge, system prompts, questions, solutions, and explanations about how Ishyiga Software works. Nothing is added to the AI until an administrator approves it.</p>
       <button class="primary" data-go="new">New contribution</button>
     </section>
-    ${state.user.role === "ADMIN" && state.stats ? cards(state.stats) : `<p class="muted">Signed in as ${esc(state.user.name)} · ${esc(state.user.role)}</p>`}
+    ${state.user.role === "ADMIN" && state.stats ? cards(state.stats) : statusCards(state.contributions)}
   `;
 }
 
+function statusCards(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const pending = list.filter((row) => row.status === "PENDING" || row.status === "UNDER_REVIEW" || row.status === "NEEDS_REVISION").length;
+  const approved = list.filter((row) => row.status === "APPROVED" || row.status === "ADDED_TO_AI").length;
+  return `<div class="cards">
+    <article class="card"><span>Pending</span><strong>${pending}</strong></article>
+    <article class="card"><span>Approved</span><strong>${approved}</strong></article>
+  </div>
+  <p class="muted">Signed in as ${esc(state.user.name)} · ${esc(state.user.role)}</p>`;
+}
 function cards(stats) {
   const items = [
     ["Contributors", stats.contributors],
@@ -397,7 +409,7 @@ function bindAuth() {
         body: JSON.stringify(data),
       });
       state.user = result.user;
-      state.view = result.user.role === "ADMIN" ? "home" : "new";
+      state.view = "home";
       toast(state.mode === "login" ? "Welcome back" : "Account created");
       await refresh();
     } catch (error) {
@@ -588,6 +600,10 @@ async function refresh() {
   try {
     if (state.view === "home" && state.user.role === "ADMIN") {
       state.stats = (await api("/api/studio/admin/stats")).stats;
+    }
+    if (state.view === "home" && state.user.role !== "ADMIN") {
+      const data = await api("/api/studio/contributions");
+      state.contributions = data.contributions.filter((row) => row.contributor_id === state.user.id);
     }
     if (state.view === "mine" || state.view === "queue") await loadList();
     if (state.view === "knowledge") state.knowledge = (await api("/api/studio/knowledge")).items;
