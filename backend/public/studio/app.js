@@ -218,8 +218,8 @@ function newView() {
       <label>Title</label><input name="title" required />
       <label>Question</label><textarea name="question" required></textarea>
       <label>Answer</label><textarea name="answer" required></textarea>
-      <label>Feature / module</label><input name="module" />
-      <label>Additional explanation</label><textarea name="notes"></textarea>
+      <label>Feature / module <span class="muted">(optional)</span></label><input name="module" />
+      <label>Additional explanation <span class="muted">(optional)</span></label><textarea name="notes"></textarea>
       <label>Screenshot note or link</label><input name="attachmentNote" />`,
     FEATURE_WORKFLOW: `
       <label>Feature name</label><input name="title" required />
