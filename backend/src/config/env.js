@@ -55,6 +55,10 @@ const env = {
     "https://ishyiga.rw/care/api/client-portal/create-ticket"
   ),
   careTicketApiKey: readEnv("CARE_TICKET_API_KEY", ""),
+  studioJwtSecret: readEnv(
+    "STUDIO_JWT_SECRET",
+    readEnv("CONVERSATIONS_API_KEY", "")
+  ),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {

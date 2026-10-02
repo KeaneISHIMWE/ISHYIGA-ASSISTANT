@@ -9,6 +9,7 @@ const { webhookRouter } = require("./routes/webhook");
 const { conversationsRouter } = require("./routes/conversations");
 const { dashboardRouter } = require("./routes/dashboard");
 const { openapiRouter } = require("./routes/openapi");
+const { studioRouter } = require("./routes/studio");
 
 const app = express();
 
@@ -31,7 +32,11 @@ app.use("/api/messages", messagesRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/openapi.json", openapiRouter);
+app.use("/api/studio", studioRouter);
 app.use("/webhook", webhookRouter);
+app.get("/studio", (_req, res) => {
+  res.redirect(302, "/studio/");
+});
 app.use(express.static(path.join(__dirname, "../public")));
 
 app.use((req, res) => {
