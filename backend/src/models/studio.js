@@ -108,6 +108,13 @@ async function listUsers() {
   return result.rows;
 }
 
+async function updatePassword(id, passwordHash) {
+  await pool.query(
+    "UPDATE studio_users SET password_hash = $2 WHERE id = $1",
+    [id, passwordHash]
+  );
+}
+
 async function updateUserRole(id, role) {
   const result = await pool.query(
     `
@@ -462,6 +469,7 @@ module.exports = {
   findUserById,
   insertUser,
   listUsers,
+  updatePassword,
   updateUserRole,
   insertContribution,
   findContributionById,

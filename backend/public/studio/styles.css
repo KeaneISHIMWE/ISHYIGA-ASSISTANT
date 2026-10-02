@@ -30,17 +30,25 @@ a { color: inherit; }
   grid-template-columns: 1.1fr 0.9fr;
 }
 .auth-story {
-  background:
-    radial-gradient(circle at 20% 20%, rgba(20, 150, 127, 0.35), transparent 28%),
-    linear-gradient(160deg, #0d1c30, #16324d 60%, #0f7a68);
+  background: #10243c url("./login-hero.png") center / cover no-repeat;
   color: white;
   padding: 64px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
 }
 .auth-story h1, .brand, h1, h2 { font-family: Fraunces, serif; font-weight: 560; letter-spacing: -0.03em; }
-.auth-story p { max-width: 460px; font-size: 18px; line-height: 1.5; color: rgba(255,255,255,0.86); }
+.auth-story p { max-width: 520px; font-size: 18px; line-height: 1.5; color: rgba(255,255,255,0.92); }
+.fun-line {
+  display: inline;
+  background: #ffe14a;
+  color: #142033;
+  padding: 0.08em 0.22em;
+  border-radius: 10px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  line-height: 1.45;
+}
 .auth-card { display: flex; align-items: center; justify-content: center; padding: 32px; }
 .panel {
   width: min(460px, 100%);

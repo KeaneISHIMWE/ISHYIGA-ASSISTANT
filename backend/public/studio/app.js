@@ -93,7 +93,6 @@ function shell(content) {
     ${navButton("queue", "Review queue")}
     ${navButton("prompts", "System prompts")}
     ${navButton("people", "Contributors")}
-    ${navButton("audit", "Audit log")}
   ` : "";
   return `
     <div class="app">
@@ -114,12 +113,10 @@ function authView() {
   return `
     <div class="auth-shell">
       <section class="auth-story">
-        <div class="brand">Ishyiga AI Knowledge Studio</div>
         <div>
-          <h1>Teach the assistant how Ishyiga Software works.</h1>
-          <p>Support staff and developers submit prompts, answers, and workflows. An administrator reviews every item before it becomes trusted AI knowledge.</p>
+          <p class="brand">Ishyiga AI Knowledge Studio</p>
+          <h1><span class="fun-line">Teach me any thing you want, I won't dissapoint you</span></h1>
         </div>
-        <p>Anonymous contributions are not accepted.</p>
       </section>
       <section class="auth-card">
         <form class="panel" id="auth-form">
@@ -310,15 +307,17 @@ function peopleView() {
   </tbody></table></div>`;
 }
 
-function auditView() {
-  return `<h1>Audit log</h1><div class="table-wrap"><table><thead><tr><th>When</th><th>User</th><th>Action</th><th>Resource</th></tr></thead><tbody>
-    ${state.audit.map((event) => `<tr><td>${esc(when(event.created_at))}</td><td>${esc(event.user_name || "—")}</td><td>${esc(event.action)}</td><td>${esc(event.resource_type)} ${esc(event.resource_id || "")}</td></tr>`).join("")}
-  </tbody></table></div>`;
-}
-
 function profileView() {
   const user = state.user;
-  return `<div class="detail"><h1>Profile</h1><p><strong>${esc(user.name)}</strong></p><p>${esc(user.email)}</p><p>${esc(user.phone || "No phone")}</p><p><span class="badge">${esc(user.role)}</span></p><p class="muted">Account created ${esc(when(user.createdAt))}</p></div>`;
+  return `<div class="detail"><h1>Profile</h1><p><strong>${esc(user.name)}</strong></p><p>${esc(user.email)}</p><p>${esc(user.phone || "No phone")}</p><p><span class="badge">${esc(user.role)}</span></p><p class="muted">Account created ${esc(when(user.createdAt))}</p>
+    <h2>Change password</h2>
+    <form id="password-form">
+      <label>Current password</label><input name="currentPassword" type="password" required />
+      <label>New password</label><input name="newPassword" type="password" minlength="8" required />
+      <div class="error" id="form-error"></div>
+      <div class="actions"><button class="primary" type="submit">Update password</button></div>
+    </form>
+  </div>`;
 }
 
 function render() {
@@ -336,7 +335,6 @@ function render() {
   else if (state.view === "knowledge") body = knowledgeView();
   else if (state.view === "prompts") body = promptsView();
   else if (state.view === "people") body = peopleView();
-  else if (state.view === "audit") body = auditView();
   else if (state.view === "profile") body = profileView();
   else body = homeView();
   root.innerHTML = shell(body);
@@ -383,6 +381,23 @@ function bindApp() {
       await api("/api/studio/auth/logout", { method: "POST", body: "{}" });
       state.user = null;
       render();
+    };
+  }
+  const passwordForm = document.getElementById("password-form");
+  if (passwordForm) {
+    passwordForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const payload = Object.fromEntries(new FormData(passwordForm).entries());
+      try {
+        await api("/api/studio/auth/password", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        passwordForm.reset();
+        toast("Password updated");
+      } catch (error) {
+        document.getElementById("form-error").textContent = error.message;
+      }
     };
   }
   document.querySelectorAll("[data-type]").forEach((button) => {
@@ -519,7 +534,6 @@ async function refresh() {
     if (state.view === "knowledge") state.knowledge = (await api("/api/studio/knowledge")).items;
     if (state.view === "prompts") state.prompts = (await api("/api/studio/admin/prompts")).prompts;
     if (state.view === "people") state.users = (await api("/api/studio/admin/users")).users;
-    if (state.view === "audit") state.audit = (await api("/api/studio/admin/audit")).events;
   } catch (error) {
     toast(error.message);
   }

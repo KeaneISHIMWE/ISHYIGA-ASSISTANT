@@ -129,6 +129,28 @@ async function login(req, res) {
   return sendAuth(res, user);
 }
 
+async function changePassword(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) {
+    return undefined;
+  }
+
+  const currentPassword = (req.body && req.body.currentPassword) || "";
+  const nextPassword = (req.body && req.body.newPassword) || "";
+  if (String(nextPassword).length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const stored = await studioModel.findUserByEmail(user.email);
+  if (!stored || !verifyPassword(currentPassword, stored.password_hash)) {
+    return res.status(401).json({ error: "Current password is incorrect" });
+  }
+
+  await studioModel.updatePassword(user.id, hashPassword(nextPassword));
+  await writeAudit(user, "password_changed", "user", user.id, {});
+  return res.json({ ok: true });
+}
+
 function logout(_req, res) {
   res.setHeader(
     "Set-Cookie",
@@ -432,6 +454,7 @@ module.exports = {
   register,
   login,
   logout,
+  changePassword,
   me,
   createContribution,
   myContributions,

@@ -7,6 +7,7 @@ studioRouter.post("/auth/register", studio.register);
 studioRouter.post("/auth/login", studio.login);
 studioRouter.post("/auth/logout", studio.logout);
 studioRouter.get("/auth/me", studio.me);
+studioRouter.post("/auth/password", studio.changePassword);
 
 studioRouter.get("/contributions", studio.myContributions);
 studioRouter.post("/contributions", studio.createContribution);
