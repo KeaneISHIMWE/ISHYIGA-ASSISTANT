@@ -292,7 +292,23 @@ describe("generateReply", () => {
     assert.match(result.reply, /Open Customers/);
   });
 
-  it("retries without tools when function tools are rejected", async () => {
+  it("does not send function tools on chat completions", async () => {
+    let payload = null;
+    const result = await generateReply({
+      message: "The invoice failed to post",
+      client: fakeClient(async (request) => {
+        payload = request;
+        return completion("Check the POS network cable.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(payload.tools, undefined);
+    assert.equal(payload.reasoning_effort, "none");
+    assert.equal(payload.max_completion_tokens, 2048);
+  });
+
+  it("retries a plain completion when reasoning extras are rejected", async () => {
     let calls = 0;
     const result = await generateReply({
       message: "The invoice failed to post",
@@ -302,7 +318,7 @@ describe("generateReply", () => {
       ],
       client: fakeClient(async (payload) => {
         calls += 1;
-        if (payload.tools) {
+        if (payload.reasoning_effort || payload.max_completion_tokens) {
           const error = new Error(
             "400 Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions"
           );
@@ -310,7 +326,6 @@ describe("generateReply", () => {
           throw error;
         }
 
-        assert.equal(payload.reasoning_effort, "none");
         assert.equal(payload.tools, undefined);
         return completion("Check the network cable on the POS.");
       }),
@@ -368,7 +383,7 @@ describe("generateReply", () => {
     const result = await generateReply({
       message: "Please get support to fix the RRA connection",
       client: fakeClient(async (payload) => {
-        assert.equal(payload.tools[0].function.name, "escalate_to_support");
+        assert.equal(payload.tools, undefined);
         assert.equal(payload.reasoning_effort, "none");
         return {
           choices: [
@@ -571,7 +586,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, true);
-    assert.equal(toolsSent, true);
+    assert.equal(toolsSent, false);
     assert.equal(result.needsSupportAction, true);
   });
 

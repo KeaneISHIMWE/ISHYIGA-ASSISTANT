@@ -21,45 +21,6 @@ const FALLBACK_REPLY =
   "Sorry, I didn't quite understand that. Could you explain what you need help with?";
 const ESCALATION_REPLY =
   "I've sent your request to my fellow support so they can assist you.";
-const ESCALATE_TOOL = {
-  type: "function",
-  function: {
-    name: "escalate_to_support",
-    description:
-      "Create a VIBE ticket and notify the assigned support agent only when the customer needs an action you cannot perform: register a contact, change company data, change POS configuration, add a user, or another task with no API or permission. Do not use this for how-to questions, greetings, troubleshooting you can explain, or when you are only unsure.",
-    parameters: {
-      type: "object",
-      properties: {
-        summary: {
-          type: "string",
-          description: "Short description of the customer issue",
-        },
-        why: {
-          type: "string",
-          description: "Why a support agent must intervene",
-        },
-        tried: {
-          type: "string",
-          description: "What you already checked or tried",
-        },
-        priority: {
-          type: "string",
-          enum: ["low", "medium", "high"],
-        },
-        reason: {
-          type: "string",
-          enum: [
-            "support_required",
-            "unregistered_contact",
-            "human_requested",
-            "ai_escalation",
-          ],
-        },
-      },
-      required: ["summary", "why"],
-    },
-  },
-};
 const GREETING_REPLY = "Hello 👋 How can I help you today?";
 const UNREGISTERED_IDENTITY_REPLY =
   "Hello 👋 It seems this number isn't registered with us yet. May I know your name and the company you represent?";
@@ -489,15 +450,6 @@ function shouldRetryWithoutHistory(reason, historyCount) {
   );
 }
 
-function shouldRetryWithoutTools(reason, toolsWereEnabled) {
-  return (
-    Boolean(toolsWereEnabled) &&
-    (reason === "tools_unsupported" ||
-      reason === "api_error" ||
-      reason === "timeout")
-  );
-}
-
 async function generateReply({
   message,
   history = [],
@@ -543,12 +495,6 @@ async function generateReply({
       ? `${trimmedMessage} ${screenshotAnalysis.inferredRequest}`
       : trimmedMessage
   );
-  const allowTools =
-    screenshotAnalysis && screenshotAnalysis.needsSupportAction === false
-      ? isActionRequiredIntent(intent)
-      : (!isNonTicketIntent(intent) && intent !== INTENTS.INFORMATION_REQUEST) ||
-        Boolean(screenshotAnalysis && screenshotAnalysis.needsSupportAction) ||
-        isActionRequiredIntent(intent);
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {
@@ -559,30 +505,28 @@ async function generateReply({
     ),
     hasImage,
     intent,
-    toolsEnabled: allowTools,
+    toolsEnabled: false,
   });
 
-  const requestCompletion = (historyForRequest, withTools = allowTools) =>
-    openai.chat.completions.create(
-      {
-        model,
-        messages: buildInput(
-          trimmedMessage,
-          historyForRequest,
-          hasImage ? image : null,
-          clientContext,
-          conversationSummary
-        ),
-        reasoning_effort: "none",
-        ...(withTools
-          ? {
-              tools: [ESCALATE_TOOL],
-              tool_choice: "auto",
-            }
-          : {}),
-      },
-      { timeout: REQUEST_TIMEOUT_MS }
-    );
+  const requestCompletion = (historyForRequest, extra = {}) => {
+    const body = {
+      model,
+      messages: buildInput(
+        trimmedMessage,
+        historyForRequest,
+        hasImage ? image : null,
+        clientContext,
+        conversationSummary
+      ),
+    };
+    if (extra.maxTokens !== false) {
+      body.max_completion_tokens = 2048;
+    }
+    if (extra.reasoning !== false) {
+      body.reasoning_effort = "none";
+    }
+    return openai.chat.completions.create(body, { timeout: REQUEST_TIMEOUT_MS });
+  };
 
   const logFailure = (error, reason) => {
     const detail =
@@ -598,18 +542,21 @@ async function generateReply({
 
   try {
     let response;
-    let usedTools = allowTools;
     try {
-      response = await requestCompletion(safeHistory, allowTools);
+      response = await requestCompletion(safeHistory);
     } catch (error) {
       const reason = classifyOpenAIError(error);
       logFailure(error, reason);
 
-      if (shouldRetryWithoutTools(reason, allowTools)) {
-        logger.warn("OpenAI request retrying without tools", { reason });
-        usedTools = false;
+      const retryPlain =
+        reason === "tools_unsupported" || reason === "api_error";
+      if (retryPlain) {
+        logger.warn("OpenAI request retrying without extras", { reason });
         try {
-          response = await requestCompletion(safeHistory, false);
+          response = await requestCompletion(safeHistory, {
+            reasoning: false,
+            maxTokens: false,
+          });
         } catch (retryError) {
           const retryReason = classifyOpenAIError(retryError);
           logFailure(retryError, retryReason);
@@ -617,7 +564,10 @@ async function generateReply({
             logger.warn("OpenAI request retrying without history", {
               reason: retryReason,
             });
-            response = await requestCompletion([], false);
+            response = await requestCompletion([], {
+              reasoning: false,
+              maxTokens: false,
+            });
           } else {
             return failureResult({
               message: trimmedMessage,
@@ -631,25 +581,35 @@ async function generateReply({
       } else if (shouldRetryWithoutHistory(reason, safeHistory.length)) {
         logger.warn("OpenAI request retrying without history", { reason });
         try {
-          response = await requestCompletion([], allowTools);
+          response = await requestCompletion([]);
         } catch (retryError) {
           const retryReason = classifyOpenAIError(retryError);
           logFailure(retryError, retryReason);
-          if (shouldRetryWithoutTools(retryReason, allowTools)) {
-            logger.warn("OpenAI request retrying without tools", {
-              reason: retryReason,
-            });
-            usedTools = false;
-            response = await requestCompletion([], false);
-          } else {
-            return failureResult({
-              message: trimmedMessage,
-              history: safeHistory,
-              image,
-              error: retryReason,
-              clientContext,
-            });
-          }
+          return failureResult({
+            message: trimmedMessage,
+            history: safeHistory,
+            image,
+            error: retryReason,
+            clientContext,
+          });
+        }
+      } else if (reason === "timeout") {
+        logger.warn("OpenAI request retrying without extras", { reason });
+        try {
+          response = await requestCompletion(safeHistory, {
+            reasoning: false,
+            maxTokens: false,
+          });
+        } catch (retryError) {
+          const retryReason = classifyOpenAIError(retryError);
+          logFailure(retryError, retryReason);
+          return failureResult({
+            message: trimmedMessage,
+            history: safeHistory,
+            image,
+            error: retryReason,
+            clientContext,
+          });
         }
       } else {
         return failureResult({
@@ -689,10 +649,15 @@ async function generateReply({
     if (!text && !escalationRequest) {
       logger.warn("OpenAI response received", { empty: true });
       try {
-        usedTools = false;
-        response = await requestCompletion(safeHistory, false);
+        response = await requestCompletion(safeHistory, {
+          reasoning: false,
+          maxTokens: false,
+        });
         text = extractReplyText(response);
-        escalationRequest = null;
+        escalationRequest = extractEscalationRequest(response);
+        if (skipEscalation) {
+          escalationRequest = null;
+        }
       } catch (retryError) {
         const retryReason = classifyOpenAIError(retryError);
         logFailure(retryError, retryReason);
@@ -731,7 +696,7 @@ async function generateReply({
     return {
       ok: true,
       reply: text || "",
-      escalationRequest: usedTools ? escalationRequest : null,
+      escalationRequest,
       intent,
       needsSupportAction: Boolean(
         screenshotAnalysis && screenshotAnalysis.needsSupportAction
