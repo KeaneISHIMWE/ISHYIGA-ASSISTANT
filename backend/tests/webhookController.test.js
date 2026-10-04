@@ -3,25 +3,13 @@ const assert = require("node:assert/strict");
 const {
   generateRepliesForInboundEvents,
   sendGeneratedReplies,
-  processTextEvents: processTextEventsImpl,
+  processTextEvents,
   IMAGE_UNREADABLE_REPLY,
-  IMAGE_UNCLEAR_REPLY,
 } = require("../src/controllers/webhookController");
-
-async function processTextEvents(events, deps = {}) {
-  return processTextEventsImpl(events, {
-    loadConversationSummaryFn: async () => "",
-    refreshConversationMemoryFn: async () => "",
-    loadClientProfileFn: async () => ({ clientContext: "" }),
-    findOpenEscalationFn: async () => null,
-    ...deps,
-  });
-}
 const {
   FALLBACK_REPLY,
   ESCALATION_REPLY,
   GREETING_REPLY,
-  UNREGISTERED_IDENTITY_REPLY,
 } = require("../src/services/openaiService");
 
 describe("generateRepliesForInboundEvents", () => {
@@ -175,8 +163,6 @@ describe("processTextEvents", () => {
           steps.push(`outbound:${input.outboundId}`);
           return { ok: true };
         },
-        loadConversationSummaryFn: async () => "",
-        refreshConversationMemoryFn: async () => "",
       }
     );
 
@@ -192,162 +178,6 @@ describe("processTextEvents", () => {
     assert.equal(results.length, 1);
     assert.equal(results[0].persistedInbound, true);
     assert.equal(results[0].sent, true);
-  });
-
-  it("continues a follow-up using the same client's history and summary", async () => {
-    let received = null;
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.3",
-          customerNumber: "250788000000",
-          message: "I already restarted it.",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-a" }),
-        loadHistory: async () => [
-          { role: "user", content: "My POS is not connecting." },
-          {
-            role: "assistant",
-            content: "I can help you troubleshoot that. Is the issue happening on all computers?",
-          },
-          { role: "user", content: "Yes, all of them." },
-          {
-            role: "assistant",
-            content: "Please restart the POS machine and the router.",
-          },
-        ],
-        loadConversationSummaryFn: async (conversationId) => {
-          assert.equal(conversationId, "conv-a");
-          return "POS is not connecting on all computers.";
-        },
-        generateReplyFn: async (input) => {
-          received = input;
-          return { ok: true, reply: "Thanks. After the restart, is the POS still offline?" };
-        },
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT3" }),
-        persistOutbound: async () => ({ ok: true }),
-        refreshConversationMemoryFn: async () => "POS is not connecting on all computers.",
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
-        }),
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].sent, true);
-    assert.equal(received.history[0].content, "My POS is not connecting.");
-    assert.equal(received.conversationSummary, "POS is not connecting on all computers.");
-    assert.equal(received.message, "I already restarted it.");
-  });
-
-  it("never loads Client B history for Client A", async () => {
-    const historyByConversation = {
-      "conv-a": [{ role: "user", content: "Client A POS is down." }],
-      "conv-b": [{ role: "user", content: "Client B needs a new user." }],
-    };
-    const seen = [];
-    await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.A",
-          customerNumber: "250788000001",
-          message: "It is still down.",
-        },
-        {
-          kind: "text",
-          messageId: "wamid.B",
-          customerNumber: "250788000002",
-          message: "Please add the user.",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async (event) => ({
-          ok: true,
-          conversationId: event.customerNumber === "250788000001" ? "conv-a" : "conv-b",
-        }),
-        loadHistory: async (conversationId) => historyByConversation[conversationId],
-        loadConversationSummaryFn: async (conversationId) =>
-          conversationId === "conv-a" ? "A POS outage" : "B user request",
-        generateReplyFn: async ({ history, conversationSummary, message }) => {
-          seen.push({
-            message,
-            history: history.map((item) => item.content),
-            conversationSummary,
-          });
-          return { ok: true, reply: "Noted." };
-        },
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT" }),
-        persistOutbound: async () => ({ ok: true }),
-        refreshConversationMemoryFn: async () => "",
-        loadClientProfileFn: async () => ({ clientContext: "" }),
-        findOpenEscalationFn: async () => null,
-        escalateFn: async () => ({ ok: false }),
-      }
-    );
-
-    assert.deepEqual(seen[0].history, ["Client A POS is down."]);
-    assert.equal(seen[0].conversationSummary, "A POS outage");
-    assert.doesNotMatch(seen[0].history.join(" "), /Client B/);
-    assert.deepEqual(seen[1].history, ["Client B needs a new user."]);
-    assert.equal(seen[1].conversationSummary, "B user request");
-    assert.doesNotMatch(seen[1].history.join(" "), /Client A/);
-  });
-
-  it("does not open another ticket when the same issue is already escalated", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.4",
-          customerNumber: "250788000000",
-          message: "Any update on the POS?",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [
-          { role: "user", content: "Please add a new customer contact." },
-          { role: "assistant", content: "I have sent this to fellow support." },
-        ],
-        loadConversationSummaryFn: async () =>
-          "Ticket already created for adding a customer contact.",
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: "Fellow support is already handling the contact change.",
-          needsSupportAction: false,
-        }),
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT4" }),
-        persistOutbound: async () => ({ ok: true }),
-        refreshConversationMemoryFn: async () => "",
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
-        }),
-        findOpenEscalationFn: async () => ({
-          ticket_id: "T-99",
-          status: "OPEN",
-          agent_name: "Uwimanikunda lucie",
-          issue_summary: "Add a new customer contact",
-        }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true };
-        },
-      }
-    );
-
-    assert.equal(ticketCalls.length, 0);
-    assert.match(results[0].reply, /fellow support is already handling/i);
   });
 
   it("does not persist an assistant reply that WhatsApp did not deliver", async () => {
@@ -517,20 +347,8 @@ describe("processTextEvents", () => {
           steps.push(`download:${mediaId}`);
           return { ok: true, dataUrl: "data:image/jpeg;base64,abc" };
         },
-        analyzeScreenshotFn: async ({ image }) => {
-          steps.push(`analyze:${Boolean(image && image.dataUrl)}`);
-          return {
-            ok: true,
-            readable: true,
-            application: "POS",
-            errorMessage: "Invoice failed",
-            needsSupportAction: false,
-          };
-        },
-        generateReplyFn: async ({ image, screenshotAnalysis, clientContext }) => {
+        generateReplyFn: async ({ image }) => {
           steps.push(`vision:${Boolean(image && image.dataUrl)}`);
-          assert.equal(screenshotAnalysis.application, "POS");
-          assert.match(clientContext, /SCREENSHOT ANALYSIS/);
           return { ok: true, reply: "I can see the invoice error." };
         },
         sendTextMessageFn: async () => {
@@ -544,7 +362,6 @@ describe("processTextEvents", () => {
     assert.deepEqual(steps, [
       "inbound:image",
       "download:MEDIA123",
-      "analyze:true",
       "vision:true",
       "send",
     ]);
@@ -569,9 +386,6 @@ describe("processTextEvents", () => {
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
         downloadMediaFn: async () => ({ ok: false, error: "api_error" }),
-        analyzeScreenshotFn: async () => {
-          throw new Error("should not analyze");
-        },
         generateReplyFn: async () => {
           throw new Error("should not generate");
         },
@@ -585,163 +399,6 @@ describe("processTextEvents", () => {
 
     assert.equal(results[0].sent, true);
     assert.equal(results[0].reply, IMAGE_UNREADABLE_REPLY);
-  });
-
-  it("asks for a clearer screenshot when vision cannot read the image", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "image",
-          messageId: "wamid.IMG1",
-          customerNumber: "250788000000",
-          message: "[Screenshot]",
-          mediaId: "MEDIA123",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        downloadMediaFn: async () => ({
-          ok: true,
-          dataUrl: "data:image/jpeg;base64,abc",
-        }),
-        analyzeScreenshotFn: async () => ({
-          ok: true,
-          readable: false,
-        }),
-        generateReplyFn: async () => {
-          throw new Error("should not generate");
-        },
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, IMAGE_UNCLEAR_REPLY);
-          return { ok: true, outboundId: "wamid.OUT1" };
-        },
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, IMAGE_UNCLEAR_REPLY);
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("does not open a ticket for a screenshot how-to", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "image",
-          messageId: "wamid.IMG1",
-          customerNumber: "250788000000",
-          message: "How do I add a customer?",
-          mediaId: "MEDIA123",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        lookupClientProfileFn: async () => ({
-          ok: true,
-          promptContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
-        }),
-        downloadMediaFn: async () => ({
-          ok: true,
-          dataUrl: "data:image/jpeg;base64,abc",
-        }),
-        analyzeScreenshotFn: async () => ({
-          ok: true,
-          readable: true,
-          application: "POS",
-          inferredRequest: "How to add a customer",
-          needsSupportAction: false,
-        }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: "Open Customers, then tap Add and fill the name.",
-          needsSupportAction: false,
-        }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, "Open Customers, then tap Add and fill the name.");
-          return { ok: true, outboundId: "wamid.OUT1" };
-        },
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true, customerReply: ESCALATION_REPLY };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, "Open Customers, then tap Add and fill the name.");
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("escalates when the screenshot shows an action the AI cannot perform", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "image",
-          messageId: "wamid.IMG1",
-          customerNumber: "250788000000",
-          message: "[Screenshot]",
-          mediaId: "MEDIA123",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        lookupClientProfileFn: async () => ({
-          ok: true,
-          promptContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
-        }),
-        downloadMediaFn: async () => ({
-          ok: true,
-          dataUrl: "data:image/jpeg;base64,abc",
-        }),
-        analyzeScreenshotFn: async () => ({
-          ok: true,
-          readable: true,
-          application: "POS",
-          inferredRequest: "Change POS configuration",
-          needsSupportAction: true,
-        }),
-        generateReplyFn: async ({ screenshotAnalysis }) => ({
-          ok: true,
-          reply: "I can see the issue from the screenshot. This requires a change I cannot perform.",
-          needsSupportAction: screenshotAnalysis.needsSupportAction,
-        }),
-        sendTextMessageFn: async () => ({
-          ok: true,
-          outboundId: "wamid.OUT1",
-        }),
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return {
-            ok: true,
-            ticketCreated: true,
-            customerReply: ESCALATION_REPLY,
-          };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, ESCALATION_REPLY);
-    assert.equal(ticketCalls.length, 1);
   });
 
   it("sends every contact through CARE lookup and Groq", async () => {
@@ -880,8 +537,7 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, FALLBACK_REPLY);
   });
 
-  it("does not escalate an invoice problem just because OpenAI failed twice", async () => {
-    const ticketCalls = [];
+  it("escalates after two fallback replies instead of repeating them", async () => {
     const results = await processTextEvents(
       [
         {
@@ -906,358 +562,13 @@ describe("processTextEvents", () => {
           error: "api_error",
         }),
         sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, FALLBACK_REPLY);
+          assert.equal(body, ESCALATION_REPLY);
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true, customerReply: ESCALATION_REPLY };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, FALLBACK_REPLY);
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("creates a ticket when the customer needs an action the AI cannot perform", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.esc",
-          customerNumber: "250788000000",
-          message: "I want to add a new customer contact.",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Kupharma",
-        }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: ESCALATION_REPLY,
-          escalationRequest: {
-            summary: "Add a new customer contact",
-            why: "No contact-registration API",
-          },
-        }),
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return {
-            ok: true,
-            ticketCreated: true,
-            customerReply: ESCALATION_REPLY,
-          };
-        },
-        findOpenEscalationFn: async () => null,
       }
     );
 
     assert.equal(results[0].reply, ESCALATION_REPLY);
-    assert.equal(ticketCalls.length, 1);
-    assert.equal(ticketCalls[0].customerNumber, "250788000000");
-  });
-
-  it("does not fire a ticket on a normal successful reply", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.ok",
-          customerNumber: "250788000000",
-          message: "How do I add a new product?",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({ clientContext: "" }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: "Go to Products → Add New and fill in the details.",
-        }),
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
-        persistOutbound: async () => ({ ok: true }),
-        createTicketFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true };
-        },
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].sent, true);
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("does not escalate a greeting from an unregistered number", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.hello",
-          customerNumber: "250788000000",
-          message: "Hello",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
-        }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: "",
-          escalationRequest: {
-            summary: "Unrecognized contact",
-            why: "Number is not in CARE",
-            reason: "unregistered_contact",
-          },
-        }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, GREETING_REPLY);
-          return { ok: true, outboundId: "wamid.OUT1" };
-        },
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return {
-            ok: false,
-            customerReply: "I couldn't register this request just now. Please try again shortly.",
-          };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, GREETING_REPLY);
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("greets how-are-you instead of opening a ticket", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.how",
-          customerNumber: "250788000000",
-          message: "How are you",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
-        }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: "",
-          escalationRequest: { summary: "Unknown number" },
-        }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, "I'm doing well, thank you 😊 How can I help you?");
-          return { ok: true, outboundId: "wamid.OUT1" };
-        },
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: false, customerReply: "I couldn't register this request just now. Please try again shortly." };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, "I'm doing well, thank you 😊 How can I help you?");
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("asks an unregistered contact who they are when the model fails", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.pos",
-          customerNumber: "250788000000",
-          message: "I have issues on pos",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
-        }),
-        generateReplyFn: async () => ({
-          ok: false,
-          reply: FALLBACK_REPLY,
-          error: "api_error",
-        }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, UNREGISTERED_IDENTITY_REPLY);
-          return { ok: true, outboundId: "wamid.OUT1" };
-        },
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: false, customerReply: "I couldn't register this request just now. Please try again shortly." };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, UNREGISTERED_IDENTITY_REPLY);
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("answers Muraho and Umeze neza without opening a ticket", async () => {
-    const ticketCalls = [];
-    const replies = [];
-
-    for (const message of ["Muraho", "Amakuru yawe?", "Umeze neza?"]) {
-      const results = await processTextEvents(
-        [
-          {
-            kind: "text",
-            messageId: `wamid.${message}`,
-            customerNumber: "250788000000",
-            message,
-          },
-        ],
-        {
-          typingMinVisibleMs: 0,
-          markReadAndShowTypingFn: async () => ({ ok: true }),
-          persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-          loadHistory: async () => [],
-          generateReplyFn: async () => ({
-            ok: false,
-            reply: FALLBACK_REPLY,
-            error: "api_error",
-          }),
-          sendTextMessageFn: async ({ body }) => {
-            replies.push(body);
-            return { ok: true, outboundId: "wamid.OUT1" };
-          },
-          persistOutbound: async () => ({ ok: true }),
-          escalateFn: async (args) => {
-            ticketCalls.push(args);
-            return { ok: false, customerReply: "I couldn't register this request just now. Please try again shortly." };
-          },
-          findOpenEscalationFn: async () => null,
-        }
-      );
-      assert.equal(results[0].sent, true);
-    }
-
-    assert.match(replies[0], /Muraho/);
-    assert.match(replies[1], /Ni meza neza/);
-    assert.match(replies[2], /Yego, meze neza/);
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("does not immediately ticket a POS question", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.posq",
-          customerNumber: "250788000000",
-          message: "I have an issue with my POS",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Demo Shop",
-        }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: "What error do you see on the POS?",
-        }),
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true, customerReply: ESCALATION_REPLY };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, "What error do you see on the POS?");
-    assert.equal(ticketCalls.length, 0);
-  });
-
-  it("escalates when the customer asks someone to check a down POS", async () => {
-    const ticketCalls = [];
-    const results = await processTextEvents(
-      [
-        {
-          kind: "text",
-          messageId: "wamid.poshelp",
-          customerNumber: "250788000000",
-          message:
-            "My POS is completely not working and I need someone to check it.",
-        },
-      ],
-      {
-        typingMinVisibleMs: 0,
-        markReadAndShowTypingFn: async () => ({ ok: true }),
-        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
-        loadHistory: async () => [],
-        loadClientProfileFn: async () => ({
-          clientContext: "CONTACT STATUS: KNOWN CUSTOMER\nCompany name: Demo Shop",
-        }),
-        generateReplyFn: async () => ({
-          ok: true,
-          reply: ESCALATION_REPLY,
-          escalationRequest: {
-            summary: "POS completely down",
-            why: "Customer asked someone to check it",
-          },
-        }),
-        sendTextMessageFn: async () => ({ ok: true, outboundId: "wamid.OUT1" }),
-        persistOutbound: async () => ({ ok: true }),
-        escalateFn: async (args) => {
-          ticketCalls.push(args);
-          return { ok: true, customerReply: ESCALATION_REPLY, agentName: "Uwimanikunda lucie" };
-        },
-        findOpenEscalationFn: async () => null,
-      }
-    );
-
-    assert.equal(results[0].reply, ESCALATION_REPLY);
-    assert.equal(ticketCalls.length, 1);
   });
 });

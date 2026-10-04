@@ -21,7 +21,6 @@ async function getHealth(_req, res) {
       schemaReady: schema.ready,
       tables: schema.tables,
     },
-    gitSha: String(process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 12),
     integrations: {
       openaiConfigured: Boolean(env.openaiApiKey),
       whatsappSendConfigured: Boolean(

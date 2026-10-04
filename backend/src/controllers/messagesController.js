@@ -1,32 +1,13 @@
 const { randomUUID } = require("node:crypto");
 const { env } = require("../config/env");
-const {
-  generateReply,
-  ESCALATION_REPLY,
-  FALLBACK_REPLY,
-} = require("../services/openaiService");
-const {
-  classifyIntent,
-  conversationalFallback,
-  isConversationalIntent,
-} = require("../services/intentService");
+const { generateReply } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
-const {
-  escalateToSupport,
-  formatOpenTicketContext,
-  shouldEscalate,
-} = require("../services/escalationService");
-const escalationModel = require("../models/escalation");
 const { toCanonicalWhatsappDigits } = require("../services/contactRules");
 const {
   persistInboundEvent,
   persistOutboundReply,
   loadRecentHistory,
 } = require("../services/conversationService");
-const {
-  loadConversationSummary,
-  maybeRefreshConversationMemory,
-} = require("../services/conversationMemoryService");
 const { logger } = require("../utils/logger");
 
 function describeMessageApi(_req, res) {
@@ -34,7 +15,7 @@ function describeMessageApi(_req, res) {
     error: "Use POST /api/messages with a JSON body",
     example: {
       message: "Hello, what services do you offer?",
-      phone: "250788000000",
+      phone: "250792431896",
     },
   });
 }
@@ -59,13 +40,9 @@ async function createMessage(
   {
     persistInbound = persistInboundEvent,
     loadHistory = loadRecentHistory,
-    loadConversationSummaryFn = loadConversationSummary,
-    refreshConversationMemoryFn = maybeRefreshConversationMemory,
     generateReplyFn = generateReply,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
-    escalateFn = escalateToSupport,
-    findOpenEscalationFn = escalationModel.findLatestOpenByCustomer,
   } = {}
 ) {
   const message = req.body && req.body.message;
@@ -87,7 +64,6 @@ async function createMessage(
   const inboundId = `api.${randomUUID()}`;
   let conversationId = null;
   let history = [];
-  let conversationSummary = "";
   let clientContext = "";
 
   if (phone) {
@@ -110,13 +86,6 @@ async function createMessage(
         logger.error("History load failed");
         history = [];
       }
-
-      try {
-        conversationSummary = await loadConversationSummaryFn(conversationId);
-      } catch (_error) {
-        logger.error("Conversation summary load failed");
-        conversationSummary = "";
-      }
     }
 
     try {
@@ -126,114 +95,20 @@ async function createMessage(
     } catch (_error) {
       logger.error("Client profile lookup failed", { reason: "api_message" });
     }
-
-    try {
-      const open = await findOpenEscalationFn(phone);
-      const openContext = formatOpenTicketContext(open);
-      if (openContext) {
-        clientContext = clientContext
-          ? `${clientContext}\n\n${openContext}`
-          : openContext;
-      }
-    } catch (_error) {
-      logger.error("Open escalation lookup failed", { reason: "api_message" });
-    }
   }
 
-  let generated = await generateReplyFn({
+  const generated = await generateReplyFn({
     message: trimmedMessage,
     history,
     clientContext,
-    conversationSummary,
   });
-
-  const intent = classifyIntent(trimmedMessage);
-  if (isConversationalIntent(intent)) {
-    generated = {
-      ...generated,
-      escalationRequest: null,
-    };
-    if (
-      !generated.ok ||
-      !generated.reply ||
-      generated.reply === ESCALATION_REPLY ||
-      generated.reply === FALLBACK_REPLY
-    ) {
-      generated = {
-        ...generated,
-        reply: conversationalFallback(trimmedMessage) || generated.reply,
-      };
-    }
-  }
-
-  if (shouldEscalate({ generated, clientContext, message: trimmedMessage })) {
-    const request = generated.escalationRequest || {};
-    try {
-      const escalated = await escalateFn({
-        conversationId,
-        customerNumber: phone,
-        message: trimmedMessage,
-        clientContext,
-        reason:
-          request.reason ||
-          (generated.reply === ESCALATION_REPLY ? "ai_escalation" : undefined),
-        summary: request.summary,
-        why: request.why,
-        tried: request.tried,
-        priority: request.priority,
-      });
-      if (escalated && escalated.ok && escalated.customerReply) {
-        generated = {
-          ...generated,
-          reply: escalated.customerReply,
-        };
-      } else if (
-        escalated &&
-        !escalated.ok &&
-        escalated.customerReply &&
-        (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY)
-      ) {
-        generated = {
-          ...generated,
-          reply: escalated.customerReply,
-        };
-      }
-    } catch (_error) {
-      logger.error("Escalation threw unexpectedly", { reason: "api_message" });
-    }
-  }
 
   if (conversationId && generated.reply) {
     await persistOutbound({
       conversationId,
       reply: generated.reply,
     });
-    try {
-      await refreshConversationMemoryFn({
-        conversationId,
-        recentHistory: history,
-        currentMessage: trimmedMessage,
-        assistantReply: generated.reply,
-      });
-    } catch (_error) {
-      logger.error("Conversation memory refresh failed");
-    }
   }
-
-  logger.info("Conversation route decided", {
-    messageId: inboundId,
-    conversationId,
-    message: trimmedMessage.slice(0, 160),
-    detectedIntent: intent,
-    conversationState: conversationId ? "open" : "none",
-    supportRequired: shouldEscalate({
-      generated,
-      clientContext,
-      message: trimmedMessage,
-    }),
-    toolCalled: Boolean(generated.escalationRequest),
-    finalResponse: generated.reply ? String(generated.reply).slice(0, 160) : null,
-  });
 
   return res.status(200).json({
     ok: generated.ok,

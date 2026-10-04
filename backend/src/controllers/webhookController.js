@@ -1,37 +1,16 @@
 const { logger } = require("../utils/logger");
 const {
   generateReply,
-  analyzeScreenshot,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
-  IMAGE_UNCLEAR_REPLY,
-  formatScreenshotContext,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
-const {
-  classifyIntent,
-  conversationalFallback,
-  isConversationalIntent,
-} = require("../services/intentService");
-const { createTicket } = require("../services/ticketService");
-const {
-  escalateToSupport,
-  formatOpenTicketContext,
-  isAgentNumber,
-  resolveByAgent,
-  shouldEscalate,
-} = require("../services/escalationService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
-const escalationModel = require("../models/escalation");
 const {
   persistInboundEvent,
   persistOutboundReply,
   loadRecentHistory,
 } = require("../services/conversationService");
-const {
-  loadConversationSummary,
-  maybeRefreshConversationMemory,
-} = require("../services/conversationMemoryService");
 const {
   verifyWebhook,
   isValidSignature,
@@ -148,19 +127,12 @@ async function processTextEvents(
   {
     persistInbound = persistInboundEvent,
     loadHistory = loadRecentHistory,
-    loadConversationSummaryFn = loadConversationSummary,
-    refreshConversationMemoryFn = maybeRefreshConversationMemory,
     generateReplyFn = generateReply,
     sendTextMessageFn = sendTextMessage,
     markReadAndShowTypingFn = markReadAndShowTyping,
     downloadMediaFn = downloadWhatsAppMedia,
-    analyzeScreenshotFn = analyzeScreenshot,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
-    createTicketFn = createTicket,
-    escalateFn = escalateToSupport,
-    resolveByAgentFn = resolveByAgent,
-    findOpenEscalationFn = escalationModel.findLatestOpenByCustomer,
     typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
     nowFn = Date.now,
     sleepFn = sleep,
@@ -185,54 +157,6 @@ async function processTextEvents(
       logger.error("WhatsApp read/typing failed", { reason: "unhandled" });
     }
 
-    if (isAgentNumber(event.customerNumber) && event.kind === "text") {
-      const agentResult = await resolveByAgentFn({
-        message: event.message,
-      });
-
-      if (agentResult.handled) {
-        const agentReply =
-          agentResult.agentReply ||
-          "I could not match that to an open support request.";
-        let sent = { ok: false };
-        try {
-          sent = await sendTextMessageFn({
-            to: event.customerNumber,
-            body: agentReply,
-          });
-        } catch (_error) {
-          logger.error("WhatsApp send failed", { reason: "unhandled" });
-        }
-
-        if (
-          agentResult.ok &&
-          agentResult.customerNumber &&
-          agentResult.customerReply
-        ) {
-          try {
-            await sendTextMessageFn({
-              to: agentResult.customerNumber,
-              body: agentResult.customerReply,
-            });
-          } catch (_error) {
-            logger.error("Customer resolution notify failed", {
-              reason: "unhandled",
-            });
-          }
-        }
-
-        results.push({
-          messageId: event.messageId,
-          conversationId: null,
-          persistedInbound: false,
-          reply: agentReply,
-          sent: sent.ok,
-          skipped: "support_agent",
-        });
-        continue;
-      }
-    }
-
     const inbound = await persistInbound(event);
 
     if (inbound.duplicate) {
@@ -252,7 +176,6 @@ async function processTextEvents(
     }
 
     let history = [];
-    let conversationSummary = "";
     if (inbound.ok && inbound.conversationId) {
       try {
         history = await loadHistory(inbound.conversationId, {
@@ -262,19 +185,9 @@ async function processTextEvents(
         logger.error("History load failed");
         history = [];
       }
-
-      try {
-        conversationSummary = await loadConversationSummaryFn(
-          inbound.conversationId
-        );
-      } catch (_error) {
-        logger.error("Conversation summary load failed");
-        conversationSummary = "";
-      }
     }
 
     let generated;
-    let clientContext = "";
 
     try {
       let image = null;
@@ -292,6 +205,7 @@ async function processTextEvents(
       }
 
       if (!generated) {
+        let clientContext = "";
         try {
           const clientLookup = await loadClientProfileFn({
             phoneNumber: event.customerNumber,
@@ -300,62 +214,18 @@ async function processTextEvents(
             clientLookup && clientLookup.clientContext
               ? clientLookup.clientContext
               : "";
-          try {
-            const open = await findOpenEscalationFn(event.customerNumber);
-            const openContext = formatOpenTicketContext(open);
-            if (openContext) {
-              clientContext = clientContext
-                ? `${clientContext}\n\n${openContext}`
-                : openContext;
-            }
-          } catch (_error) {
-            logger.error("Open escalation lookup failed", { reason: "unhandled" });
-          }
         } catch (_error) {
           logger.error("Client profile lookup failed", {
             reason: "unhandled",
           });
         }
 
-        let screenshotAnalysis = null;
-        if (image) {
-          try {
-            screenshotAnalysis = await analyzeScreenshotFn({
-              image,
-              message: event.message,
-              history,
-            });
-          } catch (_error) {
-            logger.error("Screenshot analysis failed", { reason: "unhandled" });
-            screenshotAnalysis = { ok: false, readable: true };
-          }
-
-          if (screenshotAnalysis && screenshotAnalysis.readable === false) {
-            generated = {
-              ok: true,
-              reply: IMAGE_UNCLEAR_REPLY,
-              escalationRequest: null,
-            };
-          } else {
-            const analysisContext = formatScreenshotContext(screenshotAnalysis);
-            if (analysisContext) {
-              clientContext = clientContext
-                ? `${clientContext}\n\n${analysisContext}`
-                : analysisContext;
-            }
-          }
-        }
-
-        if (!generated) {
-          generated = await generateReplyFn({
-            message: event.message,
-            history,
-            image,
-            clientContext,
-            conversationSummary,
-            screenshotAnalysis,
-          });
-        }
+        generated = await generateReplyFn({
+          message: event.message,
+          history,
+          image,
+          clientContext,
+        });
       }
     } catch (_error) {
       logger.error("OpenAI request failed", { reason: "unhandled" });
@@ -366,7 +236,6 @@ async function processTextEvents(
       };
     }
 
-
     if (!generated.ok && generated.reply === FALLBACK_REPLY) {
       generated = {
         ...generated,
@@ -375,109 +244,13 @@ async function processTextEvents(
           history,
           hasImage: event.kind === "image",
           reply: generated.reply,
-          clientContext,
         }),
       };
     }
 
-    const intent = classifyIntent(event.message);
-    const supportRequired = shouldEscalate({
-      generated,
-      clientContext,
-      message: event.message,
-    });
-
-    if (event.kind === "text" && isConversationalIntent(intent)) {
-      generated = {
-        ...generated,
-        escalationRequest: null,
-      };
-      if (
-        !generated.ok ||
-        !generated.reply ||
-        generated.reply === ESCALATION_REPLY ||
-        generated.reply === FALLBACK_REPLY
-      ) {
-        generated = {
-          ...generated,
-          reply: conversationalFallback(event.message) || generated.reply,
-        };
-      }
-    }
-
-    let escalated = null;
-    if (supportRequired) {
-      const request = generated.escalationRequest || {};
-      try {
-        escalated = await escalateFn({
-          conversationId: inbound.conversationId,
-          customerNumber: event.customerNumber,
-          message: event.message,
-          clientContext,
-          reason:
-            request.reason ||
-            (generated.reply === ESCALATION_REPLY
-              ? "ai_escalation"
-              : undefined),
-          summary: request.summary,
-          why: request.why,
-          tried: request.tried,
-          priority: request.priority,
-          createTicketFn,
-        });
-
-        if (escalated && escalated.ok && escalated.customerReply) {
-          generated = {
-            ...generated,
-            reply: escalated.customerReply,
-          };
-        } else if (
-          escalated &&
-          !escalated.ok &&
-          escalated.customerReply &&
-          (!generated.ok || !generated.reply || generated.reply === ESCALATION_REPLY)
-        ) {
-          generated = {
-            ...generated,
-            reply: escalated.customerReply,
-          };
-        }
-      } catch (ticketError) {
-        logger.error("Escalation threw unexpectedly", {
-          error:
-            ticketError && ticketError.message
-              ? String(ticketError.message).slice(0, 120)
-              : "unknown",
-        });
-      }
-    }
-
-    logger.info("Conversation route decided", {
-      messageId: event.messageId,
-      customer: maskPhoneNumber(event.customerNumber),
-      conversationId: inbound.conversationId || null,
-      message: String(event.message || "").slice(0, 160),
-      detectedIntent: intent,
-      conversationState: "open",
-      supportRequired,
-      supportAgentId:
-        (escalated && (escalated.agentId || escalated.agentName)) || null,
-      toolCalled: Boolean(generated.escalationRequest),
-      toolResult:
-        escalated && escalated.ok
-          ? "ok"
-          : escalated && escalated.error
-            ? String(escalated.error).slice(0, 80)
-            : null,
-      finalResponse: generated.reply
-        ? String(generated.reply).slice(0, 160)
-        : null,
-    });
-
     logger.info("OpenAI reply generated", {
       ok: generated.ok,
       error: generated.error || null,
-      intent,
     });
 
     await waitForTypingWindow(typingStartedAt, typingMinVisibleMs, nowFn, sleepFn);
@@ -506,16 +279,6 @@ async function processTextEvents(
         reply: generated.reply,
         outboundId: sent.outboundId || null,
       });
-      try {
-        await refreshConversationMemoryFn({
-          conversationId: inbound.conversationId,
-          recentHistory: history,
-          currentMessage: event.message,
-          assistantReply: generated.reply,
-        });
-      } catch (_error) {
-        logger.error("Conversation memory refresh failed");
-      }
     }
 
     results.push({
@@ -587,6 +350,5 @@ module.exports = {
   processTextEvents,
   TYPING_MIN_VISIBLE_MS,
   IMAGE_UNREADABLE_REPLY,
-  IMAGE_UNCLEAR_REPLY,
   ESCALATION_REPLY,
 };

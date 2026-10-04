@@ -2,15 +2,11 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   generateReply,
-  analyzeScreenshot,
-  parseScreenshotAnalysis,
-  formatScreenshotContext,
   buildInput,
   classifyOpenAIError,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
   GREETING_REPLY,
-  UNREGISTERED_IDENTITY_REPLY,
   resolveFailedCustomerReply,
   resolveCustomerFacingFailure,
   SYSTEM_PROMPT,
@@ -48,16 +44,16 @@ describe("buildInput", () => {
   });
 
   it("keeps only the most recent history turns", () => {
-    const history = Array.from({ length: 50 }, (_, index) => ({
+    const history = Array.from({ length: 40 }, (_, index) => ({
       role: index % 2 === 0 ? "user" : "assistant",
       content: `turn ${index + 1}`,
     }));
     const input = buildInput("Hello", history);
 
-    assert.equal(input.length, 42);
-    assert.equal(input[1].content, "turn 11");
-    assert.equal(input[40].content, "turn 50");
-    assert.equal(input[41].content, "Hello");
+    assert.equal(input.length, 18);
+    assert.equal(input[1].content, "turn 25");
+    assert.equal(input[16].content, "turn 40");
+    assert.equal(input[17].content, "Hello");
   });
 
   it("ignores invalid history entries", () => {
@@ -80,25 +76,6 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);
-  });
-
-  it("appends conversation memory and customer context to the system prompt", () => {
-    const input = buildInput(
-      "Yes, it still shows the error.",
-      [
-        { role: "user", content: "I restarted the router." },
-        { role: "assistant", content: "Is the POS still showing the error?" },
-      ],
-      null,
-      "CUSTOMER CONTEXT\n- Company: Demo Shop",
-      "POS is not connecting on all computers."
-    );
-
-    assert.match(input[0].content, /CUSTOMER CONTEXT/);
-    assert.match(input[0].content, /CONVERSATION MEMORY/);
-    assert.match(input[0].content, /POS is not connecting/);
-    assert.equal(input[1].content, "I restarted the router.");
-    assert.equal(input[3].content, "Yes, it still shows the error.");
   });
 
   it("appends customer context to the system prompt when provided", () => {
@@ -166,17 +143,6 @@ describe("classifyOpenAIError", () => {
       "context_length"
     );
   });
-
-  it("classifies function-tool reasoning errors", () => {
-    assert.equal(
-      classifyOpenAIError({
-        status: 400,
-        message:
-          "Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions",
-      }),
-      "tools_unsupported"
-    );
-  });
 });
 
 describe("generateReply", () => {
@@ -190,31 +156,6 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /products and services/);
-  });
-
-  it("sends recent history and the conversation summary to OpenAI", async () => {
-    let payload = null;
-    const result = await generateReply({
-      message: "Yes, all of them.",
-      history: [
-        { role: "user", content: "My POS is not connecting." },
-        {
-          role: "assistant",
-          content: "I can help you troubleshoot that. Is the issue happening on all computers?",
-        },
-      ],
-      conversationSummary: "Client reported a POS connection problem.",
-      client: fakeClient(async (request) => {
-        payload = request;
-        return completion("Thanks. Let's check the network on each computer.");
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(payload.messages[1].content, "My POS is not connecting.");
-    assert.match(payload.messages[0].content, /CONVERSATION MEMORY/);
-    assert.match(payload.messages[0].content, /POS connection problem/);
-    assert.equal(payload.messages[3].content, "Yes, all of them.");
   });
 
   it("returns a fallback when the model response is empty", async () => {
@@ -274,69 +215,6 @@ describe("generateReply", () => {
     assert.equal(result.error, "insufficient_quota");
   });
 
-  it("reads reply text from array content parts", async () => {
-    const result = await generateReply({
-      message: "How do I add a customer?",
-      client: fakeClient(async () => ({
-        choices: [
-          {
-            message: {
-              content: [{ type: "text", text: "Open Customers, then tap Add." }],
-            },
-          },
-        ],
-      })),
-    });
-
-    assert.equal(result.ok, true);
-    assert.match(result.reply, /Open Customers/);
-  });
-
-  it("does not send function tools on chat completions", async () => {
-    let payload = null;
-    const result = await generateReply({
-      message: "The invoice failed to post",
-      client: fakeClient(async (request) => {
-        payload = request;
-        return completion("Check the POS network cable.");
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(payload.tools, undefined);
-    assert.equal(payload.reasoning_effort, "none");
-    assert.equal(payload.max_completion_tokens, 2048);
-  });
-
-  it("retries a plain completion when reasoning extras are rejected", async () => {
-    let calls = 0;
-    const result = await generateReply({
-      message: "The invoice failed to post",
-      history: [
-        { role: "user", content: "POS is down" },
-        { role: "assistant", content: "Which computer?" },
-      ],
-      client: fakeClient(async (payload) => {
-        calls += 1;
-        if (payload.reasoning_effort || payload.max_completion_tokens) {
-          const error = new Error(
-            "400 Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions"
-          );
-          error.status = 400;
-          throw error;
-        }
-
-        assert.equal(payload.tools, undefined);
-        return completion("Check the network cable on the POS.");
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(calls, 2);
-    assert.match(result.reply, /network cable/);
-    assert.equal(result.escalationRequest, null);
-  });
-
   it("retries without history after a context error", async () => {
     let calls = 0;
     const result = await generateReply({
@@ -379,136 +257,6 @@ describe("generateReply", () => {
     assert.equal(result.error, "timeout");
   });
 
-  it("returns an escalation request when the model calls the support tool", async () => {
-    const result = await generateReply({
-      message: "Please get support to fix the RRA connection",
-      client: fakeClient(async (payload) => {
-        assert.equal(payload.tools, undefined);
-        assert.equal(payload.reasoning_effort, "none");
-        return {
-          choices: [
-            {
-              message: {
-                content: "",
-                tool_calls: [
-                  {
-                    function: {
-                      name: "escalate_to_support",
-                      arguments: JSON.stringify({
-                        summary: "POS cannot connect to RRA",
-                        why: "Needs configuration help",
-                        priority: "high",
-                      }),
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        };
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.escalationRequest.summary, "POS cannot connect to RRA");
-    assert.equal(result.escalationRequest.priority, "high");
-  });
-
-  it("does not escalate small talk from an unregistered number", async () => {
-    const result = await generateReply({
-      message: "How are you",
-      clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
-      client: fakeClient(async () => ({
-        choices: [
-          {
-            message: {
-              content: "",
-              tool_calls: [
-                {
-                  function: {
-                    name: "escalate_to_support",
-                    arguments: JSON.stringify({
-                      summary: "Unrecognized contact",
-                      why: "Number is not in CARE",
-                      reason: "unregistered_contact",
-                    }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      })),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.reply, "I'm doing well, thank you 😊 How can I help you?");
-    assert.equal(result.escalationRequest, null);
-  });
-
-  it("asks an unregistered contact who they are instead of escalating", async () => {
-    const result = await generateReply({
-      message: "I have issues on pos",
-      clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
-      client: fakeClient(async () => ({
-        choices: [
-          {
-            message: {
-              content: "",
-              tool_calls: [
-                {
-                  function: {
-                    name: "escalate_to_support",
-                    arguments: JSON.stringify({
-                      summary: "POS issue",
-                      why: "Unregistered number",
-                      reason: "unregistered_contact",
-                    }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      })),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.reply, UNREGISTERED_IDENTITY_REPLY);
-    assert.equal(result.escalationRequest, null);
-  });
-
-  it("does not escalate a greeting-only message", async () => {
-    const result = await generateReply({
-      message: "Hello",
-      client: fakeClient(async () => ({
-        choices: [
-          {
-            message: {
-              content: "",
-              tool_calls: [
-                {
-                  function: {
-                    name: "escalate_to_support",
-                    arguments: JSON.stringify({
-                      summary: "Unrecognized contact",
-                      why: "Number is not in CARE",
-                      reason: "unregistered_contact",
-                    }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      })),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.reply, GREETING_REPLY);
-    assert.equal(result.escalationRequest, null);
-  });
-
   it("sends the client record inside the system prompt", async () => {
     let systemContent = "";
     const result = await generateReply({
@@ -539,90 +287,7 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /invoice error/);
-    assert.equal(typeof usedModel, "string");
-    assert.ok(usedModel.length > 0);
-    assert.equal(result.escalationRequest, null);
-  });
-
-  it("does not enable the ticket tool for a screenshot how-to", async () => {
-    let toolsSent = false;
-    const result = await generateReply({
-      message: "How do I add a customer?",
-      image: { dataUrl: "data:image/jpeg;base64,abc" },
-      screenshotAnalysis: {
-        ok: true,
-        readable: true,
-        application: "POS",
-        inferredRequest: "How to add a customer",
-        needsSupportAction: false,
-      },
-      client: fakeClient(async (payload) => {
-        toolsSent = Boolean(payload.tools);
-        return completion("Open Customers, then tap Add and fill the name.");
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(toolsSent, false);
-    assert.equal(result.escalationRequest, null);
-  });
-
-  it("enables the ticket tool when screenshot analysis needs a support action", async () => {
-    let toolsSent = false;
-    const result = await generateReply({
-      message: "[Screenshot]",
-      image: { dataUrl: "data:image/jpeg;base64,abc" },
-      screenshotAnalysis: {
-        ok: true,
-        readable: true,
-        application: "POS",
-        inferredRequest: "Change POS configuration",
-        needsSupportAction: true,
-      },
-      client: fakeClient(async (payload) => {
-        toolsSent = Boolean(payload.tools);
-        return completion("This needs a change I cannot make.");
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(toolsSent, false);
-    assert.equal(result.needsSupportAction, true);
-  });
-
-  it("parses screenshot analysis JSON", () => {
-    const parsed = parseScreenshotAnalysis(
-      '```json\n{"readable":true,"application":"POS","errorMessage":"Database connection failed","needsSupportAction":false}\n```'
-    );
-    assert.equal(parsed.readable, true);
-    assert.equal(parsed.application, "POS");
-    assert.equal(parsed.errorMessage, "Database connection failed");
-    assert.equal(parsed.needsSupportAction, false);
-    assert.match(formatScreenshotContext(parsed), /Database connection failed/);
-  });
-
-  it("analyzes a screenshot with the vision model before the support reply", async () => {
-    let usedModel = "";
-    const result = await analyzeScreenshot({
-      message: "look here",
-      image: { dataUrl: "data:image/jpeg;base64,abc" },
-      client: fakeClient(async (payload) => {
-        usedModel = payload.model;
-        assert.equal(payload.tools, undefined);
-        assert.equal(payload.messages[0].role, "system");
-        assert.equal(payload.messages[1].content[1].type, "image_url");
-        return completion(
-          '{"readable":true,"application":"POS","errorMessage":"Database connection failed","needsSupportAction":false}'
-        );
-      }),
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.application, "POS");
-    assert.equal(result.errorMessage, "Database connection failed");
-    assert.equal(result.needsSupportAction, false);
-    assert.equal(typeof usedModel, "string");
-    assert.ok(usedModel.length > 0);
+    assert.equal(usedModel, "gpt-5.6-sol");
   });
 
   it("rejects a missing message", async () => {
@@ -646,59 +311,30 @@ describe("resolveFailedCustomerReply", () => {
     );
   });
 
-  it("does not escalate a how-to or unclear question after fallbacks", () => {
+  it("escalates after two consecutive fallbacks", () => {
     const history = [
-      { role: "user", content: "The invoice failed to post" },
+      { role: "user", content: "hello" },
       { role: "assistant", content: FALLBACK_REPLY },
-      { role: "user", content: "The invoice failed to post" },
+      { role: "user", content: "hello" },
       { role: "assistant", content: FALLBACK_REPLY },
-      { role: "user", content: "The invoice failed to post" },
+      { role: "user", content: "good morning" },
     ];
 
     assert.equal(
-      resolveFailedCustomerReply(history, FALLBACK_REPLY, "The invoice failed to post"),
-      FALLBACK_REPLY
-    );
-  });
-
-  it("escalates after two consecutive fallbacks only for an action the AI cannot perform", () => {
-    const history = [
-      { role: "assistant", content: FALLBACK_REPLY },
-      { role: "assistant", content: FALLBACK_REPLY },
-    ];
-
-    assert.equal(
-      resolveFailedCustomerReply(
-        history,
-        FALLBACK_REPLY,
-        "I want to add a new customer contact."
-      ),
+      resolveFailedCustomerReply(history, FALLBACK_REPLY),
       ESCALATION_REPLY
     );
   });
 
-  it("answers how-are-you as conversation, not a ticket", () => {
-    assert.equal(
-      resolveCustomerFacingFailure({ message: "How are you" }),
-      "I'm doing well, thank you 😊 How can I help you?"
-    );
-    assert.equal(
-      resolveCustomerFacingFailure({ message: "amakuru?" }),
-      "Ni meza neza, murakoze 😊 Nabafasha iki?"
-    );
-    assert.equal(
-      resolveCustomerFacingFailure({ message: "Umeze neza?" }),
-      "Yego, meze neza 😊 Murakoze kubaza. Nabafasha iki?"
-    );
-  });
+  it("stays on escalation after it has already been sent", () => {
+    const history = [
+      { role: "assistant", content: FALLBACK_REPLY },
+      { role: "assistant", content: ESCALATION_REPLY },
+    ];
 
-  it("asks an unregistered contact for their company when OpenAI fails", () => {
     assert.equal(
-      resolveCustomerFacingFailure({
-        message: "I have issues on pos",
-        clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
-      }),
-      UNREGISTERED_IDENTITY_REPLY
+      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      ESCALATION_REPLY
     );
   });
 

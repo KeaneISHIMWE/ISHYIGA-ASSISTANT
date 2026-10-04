@@ -29,12 +29,11 @@ const env = {
   whatsappAccessToken: readEnv("WHATSAPP_ACCESS_TOKEN", ""),
   whatsappPhoneNumberId: readEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
   whatsappApiVersion: readEnv("WHATSAPP_API_VERSION", "v23.0"),
-  openaiApiKey: readEnv("OPENAI_API_KEY", readEnv("GROQ_API_KEY", "")),
-  openaiBaseUrl: readEnv("OPENAI_BASE_URL", readEnv("GROQ_BASE_URL", "")),
-  openaiModel: readEnv("OPENAI_MODEL", readEnv("GROQ_MODEL", "gpt-5.6-sol")),
+  openaiApiKey: readEnv("OPENAI_API_KEY", ""),
+  openaiModel: readEnv("OPENAI_MODEL", "gpt-5.6-sol"),
   openaiVisionModel: readEnv(
     "OPENAI_VISION_MODEL",
-    readEnv("GROQ_VISION_MODEL", readEnv("OPENAI_MODEL", readEnv("GROQ_MODEL", "gpt-5.6-sol")))
+    readEnv("OPENAI_MODEL", "gpt-5.6-sol")
   ),
   customerApiUrl: readEnv("CUSTOMER_API_URL", readEnv("CLIENTS_API_URL", "")),
   customerApiSessionCookie: readEnv("CUSTOMER_API_SESSION_COOKIE", ""),
@@ -50,15 +49,6 @@ const env = {
     readEnv("CUSTOMER_API_TIMEOUT_MS", readEnv("CLIENTS_API_TIMEOUT_MS", "8000"))
   ),
   conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
-  careTicketApiUrl: readEnv(
-    "CARE_TICKET_API_URL",
-    "https://ishyiga.rw/care/api/client-portal/create-ticket"
-  ),
-  careTicketApiKey: readEnv("CARE_TICKET_API_KEY", ""),
-  studioJwtSecret: readEnv(
-    "STUDIO_JWT_SECRET",
-    readEnv("CONVERSATIONS_API_KEY", "")
-  ),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {
