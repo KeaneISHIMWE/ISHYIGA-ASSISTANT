@@ -6,7 +6,6 @@ const {
   classifyOpenAIError,
   FALLBACK_REPLY,
   ESCALATION_REPLY,
-  GREETING_REPLY,
   resolveFailedCustomerReply,
   resolveCustomerFacingFailure,
   SYSTEM_PROMPT,
@@ -203,7 +202,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.reply, "");
     assert.equal(result.error, "Empty model response");
   });
 
@@ -218,7 +217,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.reply, "");
     assert.equal(result.error, "timeout");
   });
 
@@ -233,7 +232,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.reply, "");
     assert.equal(result.error, "rate_limit");
   });
 
@@ -249,7 +248,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, GREETING_REPLY);
+    assert.equal(result.reply, "");
     assert.equal(result.error, "insufficient_quota");
   });
 
@@ -467,13 +466,13 @@ describe("resolveFailedCustomerReply", () => {
     assert.equal(resolveFailedCustomerReply(history, FALLBACK_REPLY), "");
   });
 
-  it("answers greetings instead of the fallback", () => {
+  it("stays silent on greetings when the model fails", () => {
     assert.equal(
       resolveCustomerFacingFailure({
         message: "good morning",
         history: [],
       }),
-      GREETING_REPLY
+      ""
     );
   });
 });

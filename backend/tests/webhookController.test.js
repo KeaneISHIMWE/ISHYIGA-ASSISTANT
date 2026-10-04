@@ -47,7 +47,7 @@ describe("generateRepliesForInboundEvents", () => {
         {
           kind: "text",
           messageId: "wamid.quota",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       async () => ({
@@ -121,7 +121,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.1",
           customerNumber: "250788000000",
-          message: "Hello",
+          message: "The invoice failed",
         },
         {
           kind: "unsupported",
@@ -170,7 +170,7 @@ describe("processTextEvents", () => {
       "inbound:wamid.1",
       "history:conv-1",
       "client:250788000000",
-      "groq:Hello:1:CUSTOMER CONTEXT\n- Company: Demo Shop",
+      "groq:The invoice failed:1:CUSTOMER CONTEXT\n- Company: Demo Shop",
       "send:250788000000",
       "outbound:wamid.OUT1",
     ]);
@@ -187,7 +187,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.fail",
           customerNumber: "250788000000",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       {
@@ -215,7 +215,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.1",
           customerNumber: "250788000000",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       {
@@ -246,7 +246,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.1",
           customerNumber: "250788000000",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       {
@@ -284,7 +284,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.1",
           customerNumber: "250788000000",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       {
@@ -408,7 +408,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.1",
           customerNumber: "250788880066",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       {
@@ -434,7 +434,7 @@ describe("processTextEvents", () => {
 
     assert.deepEqual(steps, [
       "client:250788880066",
-      "groq:Hello:CUSTOMER CONTEXT\n- Company: Demo Shop",
+      "groq:The invoice failed:CUSTOMER CONTEXT\n- Company: Demo Shop",
       "send:250788880066:We can help.",
     ]);
     assert.equal(results[0].reply, "We can help.");
@@ -449,7 +449,7 @@ describe("processTextEvents", () => {
           kind: "text",
           messageId: "wamid.1",
           customerNumber: "250788000000",
-          message: "Hello",
+          message: "The invoice failed",
         },
       ],
       {
@@ -474,7 +474,9 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, "We can help.");
   });
 
-  it("greets the customer when Groq fails on a hello", async () => {
+  it("does not send a WhatsApp reply for a hello", async () => {
+    let generated = false;
+    let sent = false;
     const results = await processTextEvents(
       [
         {
@@ -489,20 +491,22 @@ describe("processTextEvents", () => {
         markReadAndShowTypingFn: async () => ({ ok: true }),
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
-        generateReplyFn: async () => ({
-          ok: false,
-          reply: FALLBACK_REPLY,
-          error: "api_error",
-        }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, GREETING_REPLY);
+        generateReplyFn: async () => {
+          generated = true;
+          return { ok: true, reply: GREETING_REPLY };
+        },
+        sendTextMessageFn: async () => {
+          sent = true;
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
       }
     );
 
-    assert.equal(results[0].reply, GREETING_REPLY);
+    assert.equal(generated, false);
+    assert.equal(sent, false);
+    assert.equal(results[0].sent, false);
+    assert.equal(results[0].skipped, "greeting");
   });
 
   it("does not send a WhatsApp reply when the model fails on a real question", async () => {

@@ -160,17 +160,8 @@ function resolveFailedCustomerReply(_history, _reply = FALLBACK_REPLY) {
   return FALLBACK_REPLY;
 }
 
-function resolveCustomerFacingFailure({
-  message,
-  history,
-  hasImage = false,
-  reply = FALLBACK_REPLY,
-} = {}) {
-  if (!hasImage && isGreetingOnly(message)) {
-    return GREETING_REPLY;
-  }
-
-  return resolveFailedCustomerReply(history, reply);
+function resolveCustomerFacingFailure(_args = {}) {
+  return FALLBACK_REPLY;
 }
 
 function failureResult({ message, history, image, error }) {
