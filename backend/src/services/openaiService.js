@@ -96,6 +96,27 @@ function buildInput(
   ];
 }
 
+function buildResponseInput(message, history, image) {
+  const turns = normalizeHistory(history).map((item) => ({
+    role: item.role,
+    content: item.content,
+  }));
+
+  if (!image || typeof image.dataUrl !== "string" || !image.dataUrl) {
+    turns.push({ role: "user", content: message });
+    return turns;
+  }
+
+  turns.push({
+    role: "user",
+    content: [
+      { type: "input_text", text: message },
+      { type: "input_image", image_url: image.dataUrl },
+    ],
+  });
+  return turns;
+}
+
 function isFailedAssistantReply(content) {
   return content === FALLBACK_REPLY || content === ESCALATION_REPLY;
 }
@@ -193,10 +214,33 @@ function extractTextFromContent(content) {
 }
 
 function extractReplyText(response) {
+  if (!response) {
+    return "";
+  }
+
+  if (typeof response.output_text === "string" && response.output_text.trim()) {
+    return response.output_text.trim();
+  }
+
+  if (Array.isArray(response.output)) {
+    const parts = [];
+    for (const item of response.output) {
+      if (!item || item.type !== "message" || !Array.isArray(item.content)) {
+        continue;
+      }
+      for (const part of item.content) {
+        if (part && typeof part.text === "string" && part.text.trim()) {
+          parts.push(part.text.trim());
+        }
+      }
+    }
+    if (parts.length) {
+      return parts.join("\n");
+    }
+  }
+
   const message =
-    response && response.choices && response.choices[0]
-      ? response.choices[0].message
-      : null;
+    response.choices && response.choices[0] ? response.choices[0].message : null;
   if (!message) {
     return "";
   }
@@ -341,6 +385,46 @@ async function generateReply({
     });
   };
 
+  const requestResponse = (historyForRequest, extra = {}) => {
+    const body = {
+      model,
+      instructions: buildSystemPrompt(clientContext, conversationSummary),
+      input: buildResponseInput(
+        trimmedMessage,
+        historyForRequest,
+        hasImage ? image : null
+      ),
+      store: false,
+    };
+    if (extra.maxTokens !== false) {
+      body.max_output_tokens = 2048;
+    }
+    if (extra.reasoning !== false) {
+      body.reasoning = { effort: "none" };
+    }
+    return openai.responses.create(body, { timeout: REQUEST_TIMEOUT_MS });
+  };
+
+  const requestModel = async (historyForRequest, extra = {}) => {
+    if (openai.responses && typeof openai.responses.create === "function") {
+      try {
+        const result = await requestResponse(historyForRequest, extra);
+        if (extractReplyText(result)) {
+          return result;
+        }
+        logger.warn("OpenAI responses API returned empty text");
+      } catch (error) {
+        logger.warn("OpenAI responses API failed, using chat completions", {
+          reason: classifyOpenAIError(error),
+          detail:
+            typeof error.message === "string" ? error.message.slice(0, 180) : "",
+        });
+      }
+    }
+
+    return requestCompletion(historyForRequest, extra);
+  };
+
   const logFailure = (error, reason) => {
     const detail =
       typeof error.message === "string" ? error.message.slice(0, 180) : "";
@@ -356,7 +440,7 @@ async function generateReply({
   try {
     let response;
     try {
-      response = await requestCompletion(safeHistory);
+      response = await requestModel(safeHistory);
     } catch (error) {
       const reason = classifyOpenAIError(error);
       logFailure(error, reason);
@@ -364,7 +448,7 @@ async function generateReply({
       if (shouldRetryPlainCompletion(reason)) {
         logger.warn("OpenAI request retrying without extras", { reason });
         try {
-          response = await requestCompletion(safeHistory, {
+          response = await requestModel(safeHistory, {
             reasoning: false,
             maxTokens: false,
           });
@@ -375,7 +459,7 @@ async function generateReply({
             logger.warn("OpenAI request retrying without history", {
               reason: retryReason,
             });
-            response = await requestCompletion([], {
+            response = await requestModel([], {
               reasoning: false,
               maxTokens: false,
             });
@@ -390,7 +474,7 @@ async function generateReply({
         }
       } else if (shouldRetryWithoutHistory(reason, safeHistory.length)) {
         logger.warn("OpenAI request retrying without history", { reason });
-        response = await requestCompletion([]);
+        response = await requestModel([]);
       } else {
         return failureResult({
           message: trimmedMessage,
@@ -406,7 +490,7 @@ async function generateReply({
     if (!text) {
       logger.warn("OpenAI response received", { empty: true });
       try {
-        response = await requestCompletion(safeHistory, {
+        response = await requestModel(safeHistory, {
           reasoning: false,
           maxTokens: false,
         });
@@ -473,4 +557,5 @@ module.exports = {
   REQUEST_TIMEOUT_MS,
   MAX_HISTORY_MESSAGES,
   combineClientContext,
+  buildResponseInput,
 };

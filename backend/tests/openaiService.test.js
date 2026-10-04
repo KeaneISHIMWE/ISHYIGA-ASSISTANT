@@ -263,6 +263,29 @@ describe("generateReply", () => {
     assert.match(result.reply, /Open Customers/);
   });
 
+  it("reads output_text from the responses API", async () => {
+    const result = await generateReply({
+      message: "The invoice failed to post",
+      client: {
+        responses: {
+          create: async () => ({
+            output_text: "Check the POS network cable and try again.",
+          }),
+        },
+        chat: {
+          completions: {
+            create: async () => {
+              throw new Error("chat completions should not run");
+            },
+          },
+        },
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.reply, /network cable/);
+  });
+
   it("retries a plain completion when reasoning extras are rejected", async () => {
     let calls = 0;
     const result = await generateReply({
