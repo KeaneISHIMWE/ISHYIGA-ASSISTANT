@@ -213,6 +213,40 @@ function extractTextFromContent(content) {
   return "";
 }
 
+function collectOutputText(value, parts = []) {
+  if (!value) {
+    return parts;
+  }
+
+  if (typeof value === "string") {
+    if (value.trim()) {
+      parts.push(value.trim());
+    }
+    return parts;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectOutputText(item, parts);
+    }
+    return parts;
+  }
+
+  if (typeof value !== "object") {
+    return parts;
+  }
+
+  if (typeof value.text === "string" && value.text.trim()) {
+    parts.push(value.text.trim());
+  }
+
+  if (Array.isArray(value.content)) {
+    collectOutputText(value.content, parts);
+  }
+
+  return parts;
+}
+
 function extractReplyText(response) {
   if (!response) {
     return "";
@@ -222,21 +256,9 @@ function extractReplyText(response) {
     return response.output_text.trim();
   }
 
-  if (Array.isArray(response.output)) {
-    const parts = [];
-    for (const item of response.output) {
-      if (!item || item.type !== "message" || !Array.isArray(item.content)) {
-        continue;
-      }
-      for (const part of item.content) {
-        if (part && typeof part.text === "string" && part.text.trim()) {
-          parts.push(part.text.trim());
-        }
-      }
-    }
-    if (parts.length) {
-      return parts.join("\n");
-    }
+  const fromOutput = collectOutputText(response.output).join("\n");
+  if (fromOutput) {
+    return fromOutput;
   }
 
   const message =
@@ -288,7 +310,9 @@ function classifyOpenAIError(error) {
 
   if (
     status === 400 &&
-    /function tools|reasoning_effort|\btools\b/i.test(message)
+    /function tools|reasoning_effort|reasoning\.effort|unsupported parameter|\btools\b/i.test(
+      message
+    )
   ) {
     return "extras_unsupported";
   }
@@ -377,7 +401,7 @@ async function generateReply({
     if (extra.maxTokens !== false) {
       body.max_completion_tokens = 2048;
     }
-    if (extra.reasoning !== false) {
+    if (extra.reasoning === true) {
       body.reasoning_effort = "none";
     }
     return openai.chat.completions.create(body, {
@@ -394,12 +418,11 @@ async function generateReply({
         historyForRequest,
         hasImage ? image : null
       ),
-      store: false,
     };
     if (extra.maxTokens !== false) {
       body.max_output_tokens = 2048;
     }
-    if (extra.reasoning !== false) {
+    if (extra.reasoning === true) {
       body.reasoning = { effort: "none" };
     }
     return openai.responses.create(body, { timeout: REQUEST_TIMEOUT_MS });

@@ -172,6 +172,14 @@ describe("classifyOpenAIError", () => {
       }),
       "extras_unsupported"
     );
+    assert.equal(
+      classifyOpenAIError({
+        status: 400,
+        message:
+          "Unsupported parameter: 'reasoning.effort' is not supported with this model.",
+      }),
+      "extras_unsupported"
+    );
   });
 });
 
@@ -284,6 +292,34 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /network cable/);
+  });
+
+  it("falls back to chat completions when responses rejects extras", async () => {
+    const result = await generateReply({
+      message: "can i see my balance ?",
+      client: {
+        responses: {
+          create: async () => {
+            const error = new Error(
+              "400 Unsupported parameter: 'reasoning.effort' is not supported with this model."
+            );
+            error.status = 400;
+            throw error;
+          },
+        },
+        chat: {
+          completions: {
+            create: async () =>
+              completion(
+                "I cannot see live balances from WhatsApp. Open Reports, then Balance."
+              ),
+          },
+        },
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.reply, /Reports/);
   });
 
   it("retries a plain completion when reasoning extras are rejected", async () => {
