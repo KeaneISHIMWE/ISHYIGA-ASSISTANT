@@ -8,8 +8,7 @@ const {
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_HISTORY_MESSAGES = 40;
-const FALLBACK_REPLY =
-  "Sorry, I didn't get that properly. Could you please explain it to me again?";
+const FALLBACK_REPLY = "";
 const ESCALATION_REPLY =
   "I'm having trouble answering right now. Please contact our support team and we'll help you from there.";
 const GREETING_REPLY = "Hello 👋";
@@ -157,12 +156,8 @@ function isGreetingOnly(message) {
   return GREETING_ONLY_PATTERN.test(message.trim());
 }
 
-function resolveFailedCustomerReply(history, reply = FALLBACK_REPLY) {
-  if (countConsecutiveFailedReplies(history) >= MAX_CONSECUTIVE_FALLBACKS) {
-    return ESCALATION_REPLY;
-  }
-
-  return reply || FALLBACK_REPLY;
+function resolveFailedCustomerReply(_history, _reply = FALLBACK_REPLY) {
+  return FALLBACK_REPLY;
 }
 
 function resolveCustomerFacingFailure({

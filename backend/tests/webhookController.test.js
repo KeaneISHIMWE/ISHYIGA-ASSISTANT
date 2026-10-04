@@ -8,7 +8,6 @@ const {
 } = require("../src/controllers/webhookController");
 const {
   FALLBACK_REPLY,
-  ESCALATION_REPLY,
   GREETING_REPLY,
 } = require("../src/services/openaiService");
 
@@ -506,7 +505,8 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, GREETING_REPLY);
   });
 
-  it("sends the fallback on the first Groq failure for a real question", async () => {
+  it("does not send a WhatsApp reply when the model fails on a real question", async () => {
+    let sent = false;
     const results = await processTextEvents(
       [
         {
@@ -526,18 +526,20 @@ describe("processTextEvents", () => {
           reply: FALLBACK_REPLY,
           error: "api_error",
         }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, FALLBACK_REPLY);
+        sendTextMessageFn: async () => {
+          sent = true;
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
       }
     );
 
-    assert.equal(results[0].reply, FALLBACK_REPLY);
+    assert.equal(sent, false);
+    assert.equal(results[0].sent, false);
+    assert.equal(results[0].reply, "");
   });
 
-  it("escalates after two fallback replies instead of repeating them", async () => {
+  it("does not send an escalation after two silent failures", async () => {
     const results = await processTextEvents(
       [
         {
@@ -561,14 +563,14 @@ describe("processTextEvents", () => {
           reply: FALLBACK_REPLY,
           error: "api_error",
         }),
-        sendTextMessageFn: async ({ body }) => {
-          assert.equal(body, ESCALATION_REPLY);
-          return { ok: true, outboundId: "wamid.OUT1" };
+        sendTextMessageFn: async () => {
+          throw new Error("should not send a WhatsApp reply");
         },
         persistOutbound: async () => ({ ok: true }),
       }
     );
 
-    assert.equal(results[0].reply, ESCALATION_REPLY);
+    assert.equal(results[0].sent, false);
+    assert.equal(results[0].reply, "");
   });
 });

@@ -376,7 +376,7 @@ describe("generateReply", () => {
     assert.match(result.reply, /services/);
   });
 
-  it("uses the generic fallback for a real question when OpenAI fails", async () => {
+  it("stays silent for a real question when OpenAI fails", async () => {
     const result = await generateReply({
       message: "The invoice failed to post",
       client: fakeClient(async () => {
@@ -387,7 +387,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, FALLBACK_REPLY);
+    assert.equal(result.reply, "");
     assert.equal(result.error, "timeout");
   });
 
@@ -435,18 +435,18 @@ describe("generateReply", () => {
 });
 
 describe("resolveFailedCustomerReply", () => {
-  it("keeps the first fallbacks before escalation", () => {
-    assert.equal(resolveFailedCustomerReply([], FALLBACK_REPLY), FALLBACK_REPLY);
+  it("stays silent instead of sending a fallback", () => {
+    assert.equal(resolveFailedCustomerReply([], FALLBACK_REPLY), "");
     assert.equal(
       resolveFailedCustomerReply(
         [{ role: "assistant", content: FALLBACK_REPLY }],
         FALLBACK_REPLY
       ),
-      FALLBACK_REPLY
+      ""
     );
   });
 
-  it("escalates after two consecutive fallbacks", () => {
+  it("does not escalate after repeated failures", () => {
     const history = [
       { role: "user", content: "hello" },
       { role: "assistant", content: FALLBACK_REPLY },
@@ -455,22 +455,16 @@ describe("resolveFailedCustomerReply", () => {
       { role: "user", content: "good morning" },
     ];
 
-    assert.equal(
-      resolveFailedCustomerReply(history, FALLBACK_REPLY),
-      ESCALATION_REPLY
-    );
+    assert.equal(resolveFailedCustomerReply(history, FALLBACK_REPLY), "");
   });
 
-  it("stays on escalation after it has already been sent", () => {
+  it("stays silent after an earlier escalation", () => {
     const history = [
       { role: "assistant", content: FALLBACK_REPLY },
       { role: "assistant", content: ESCALATION_REPLY },
     ];
 
-    assert.equal(
-      resolveFailedCustomerReply(history, FALLBACK_REPLY),
-      ESCALATION_REPLY
-    );
+    assert.equal(resolveFailedCustomerReply(history, FALLBACK_REPLY), "");
   });
 
   it("answers greetings instead of the fallback", () => {

@@ -1,7 +1,6 @@
 const { logger } = require("../utils/logger");
 const {
   generateReply,
-  FALLBACK_REPLY,
   ESCALATION_REPLY,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
@@ -75,7 +74,7 @@ async function generateRepliesForInboundEvents(
         messageId: event.messageId,
         customerNumber: event.customerNumber,
         ok: false,
-        reply: FALLBACK_REPLY,
+        reply: "",
         error: "unhandled",
       });
     }
@@ -248,12 +247,12 @@ async function processTextEvents(
       logger.error("OpenAI request failed", { reason: "unhandled" });
       generated = {
         ok: false,
-        reply: FALLBACK_REPLY,
+        reply: "",
         error: "unhandled",
       };
     }
 
-    if (!generated.ok && generated.reply === FALLBACK_REPLY) {
+    if (!generated.ok && !String(generated.reply || "").trim()) {
       generated = {
         ...generated,
         reply: resolveCustomerFacingFailure({
@@ -272,23 +271,35 @@ async function processTextEvents(
 
     await waitForTypingWindow(typingStartedAt, typingMinVisibleMs, nowFn, sleepFn);
 
-    let sent;
-    try {
-      sent = await sendTextMessageFn({
-        to: event.customerNumber,
-        body: generated.reply,
-      });
-    } catch (_error) {
-      logger.error("WhatsApp send failed", { reason: "unhandled" });
-      sent = { ok: false, outboundId: null, error: "unhandled" };
-    }
+    let sent = { ok: false, outboundId: null, error: null };
+    const outboundBody =
+      typeof generated.reply === "string" ? generated.reply.trim() : "";
 
-    logger.info("WhatsApp reply sent", {
-      messageId: event.messageId,
-      ok: sent.ok,
-      error: sent.error || null,
-      customer: maskPhoneNumber(event.customerNumber),
-    });
+    if (!outboundBody) {
+      logger.info("WhatsApp reply skipped", {
+        messageId: event.messageId,
+        reason: "empty_reply",
+        error: generated.error || null,
+        customer: maskPhoneNumber(event.customerNumber),
+      });
+    } else {
+      try {
+        sent = await sendTextMessageFn({
+          to: event.customerNumber,
+          body: outboundBody,
+        });
+      } catch (_error) {
+        logger.error("WhatsApp send failed", { reason: "unhandled" });
+        sent = { ok: false, outboundId: null, error: "unhandled" };
+      }
+
+      logger.info("WhatsApp reply sent", {
+        messageId: event.messageId,
+        ok: sent.ok,
+        error: sent.error || null,
+        customer: maskPhoneNumber(event.customerNumber),
+      });
+    }
 
     if (inbound.ok && inbound.conversationId && generated.reply && sent.ok) {
       await persistOutbound({
