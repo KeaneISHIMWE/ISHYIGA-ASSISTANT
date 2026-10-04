@@ -162,6 +162,17 @@ describe("classifyOpenAIError", () => {
       "context_length"
     );
   });
+
+  it("classifies reasoning extras errors", () => {
+    assert.equal(
+      classifyOpenAIError({
+        status: 400,
+        message:
+          "Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions",
+      }),
+      "extras_unsupported"
+    );
+  });
 });
 
 describe("generateReply", () => {
@@ -232,6 +243,51 @@ describe("generateReply", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reply, GREETING_REPLY);
     assert.equal(result.error, "insufficient_quota");
+  });
+
+  it("reads reply text from array content parts", async () => {
+    const result = await generateReply({
+      message: "How do I add a customer?",
+      client: fakeClient(async () => ({
+        choices: [
+          {
+            message: {
+              content: [{ type: "text", text: "Open Customers, then tap Add." }],
+            },
+          },
+        ],
+      })),
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.reply, /Open Customers/);
+  });
+
+  it("retries a plain completion when reasoning extras are rejected", async () => {
+    let calls = 0;
+    const result = await generateReply({
+      message: "The invoice failed to post",
+      history: [
+        { role: "user", content: "POS is down" },
+        { role: "assistant", content: "Which computer?" },
+      ],
+      client: fakeClient(async (payload) => {
+        calls += 1;
+        if (payload.reasoning_effort || payload.max_completion_tokens) {
+          const error = new Error(
+            "400 Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions"
+          );
+          error.status = 400;
+          throw error;
+        }
+
+        return completion("Check the network cable on the POS.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+    assert.match(result.reply, /network cable/);
   });
 
   it("retries without history after a context error", async () => {

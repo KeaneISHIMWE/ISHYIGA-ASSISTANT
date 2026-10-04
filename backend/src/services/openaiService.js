@@ -169,12 +169,44 @@ function failureResult({ message, history, image, error }) {
   };
 }
 
-function extractReplyText(response) {
-  const text = response && response.choices && response.choices[0]
-    ? response.choices[0].message && response.choices[0].message.content
-    : "";
+function extractTextFromContent(content) {
+  if (typeof content === "string") {
+    return content.trim();
+  }
 
-  return typeof text === "string" ? text.trim() : "";
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (part && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .join("")
+      .trim();
+  }
+
+  return "";
+}
+
+function extractReplyText(response) {
+  const message =
+    response && response.choices && response.choices[0]
+      ? response.choices[0].message
+      : null;
+  if (!message) {
+    return "";
+  }
+
+  const fromContent = extractTextFromContent(message.content);
+  if (fromContent) {
+    return fromContent;
+  }
+
+  return typeof message.refusal === "string" ? message.refusal.trim() : "";
 }
 
 function classifyOpenAIError(error) {
@@ -212,6 +244,13 @@ function classifyOpenAIError(error) {
 
   if (
     status === 400 &&
+    /function tools|reasoning_effort|\btools\b/i.test(message)
+  ) {
+    return "extras_unsupported";
+  }
+
+  if (
+    status === 400 &&
     /context|token|too large|maximum/i.test(message)
   ) {
     return "context_length";
@@ -221,11 +260,14 @@ function classifyOpenAIError(error) {
 }
 
 function shouldRetryWithoutHistory(reason, historyCount) {
+  return historyCount > 0 && reason === "context_length";
+}
+
+function shouldRetryPlainCompletion(reason) {
   return (
-    historyCount > 0 &&
-    (reason === "api_error" ||
-      reason === "timeout" ||
-      reason === "context_length")
+    reason === "extras_unsupported" ||
+    reason === "api_error" ||
+    reason === "timeout"
   );
 }
 
@@ -277,20 +319,27 @@ async function generateReply({
     hasImage,
   });
 
-  const requestCompletion = (historyForRequest) =>
-    openai.chat.completions.create(
-      {
-        model,
-        messages: buildInput(
-          trimmedMessage,
-          historyForRequest,
-          hasImage ? image : null,
-          clientContext,
-          conversationSummary
-        ),
-      },
-      { timeout: REQUEST_TIMEOUT_MS }
-    );
+  const requestCompletion = (historyForRequest, extra = {}) => {
+    const body = {
+      model,
+      messages: buildInput(
+        trimmedMessage,
+        historyForRequest,
+        hasImage ? image : null,
+        clientContext,
+        conversationSummary
+      ),
+    };
+    if (extra.maxTokens !== false) {
+      body.max_completion_tokens = 2048;
+    }
+    if (extra.reasoning !== false) {
+      body.reasoning_effort = "none";
+    }
+    return openai.chat.completions.create(body, {
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+  };
 
   const logFailure = (error, reason) => {
     const detail =
@@ -312,7 +361,37 @@ async function generateReply({
       const reason = classifyOpenAIError(error);
       logFailure(error, reason);
 
-      if (!shouldRetryWithoutHistory(reason, safeHistory.length)) {
+      if (shouldRetryPlainCompletion(reason)) {
+        logger.warn("OpenAI request retrying without extras", { reason });
+        try {
+          response = await requestCompletion(safeHistory, {
+            reasoning: false,
+            maxTokens: false,
+          });
+        } catch (retryError) {
+          const retryReason = classifyOpenAIError(retryError);
+          logFailure(retryError, retryReason);
+          if (shouldRetryWithoutHistory(retryReason, safeHistory.length)) {
+            logger.warn("OpenAI request retrying without history", {
+              reason: retryReason,
+            });
+            response = await requestCompletion([], {
+              reasoning: false,
+              maxTokens: false,
+            });
+          } else {
+            return failureResult({
+              message: trimmedMessage,
+              history: safeHistory,
+              image,
+              error: retryReason,
+            });
+          }
+        }
+      } else if (shouldRetryWithoutHistory(reason, safeHistory.length)) {
+        logger.warn("OpenAI request retrying without history", { reason });
+        response = await requestCompletion([]);
+      } else {
         return failureResult({
           message: trimmedMessage,
           history: safeHistory,
@@ -320,15 +399,31 @@ async function generateReply({
           error: reason,
         });
       }
-
-      logger.warn("OpenAI request retrying without history", { reason });
-      response = await requestCompletion([]);
     }
 
-    const text = extractReplyText(response);
+    let text = extractReplyText(response);
 
     if (!text) {
       logger.warn("OpenAI response received", { empty: true });
+      try {
+        response = await requestCompletion(safeHistory, {
+          reasoning: false,
+          maxTokens: false,
+        });
+        text = extractReplyText(response);
+      } catch (retryError) {
+        const retryReason = classifyOpenAIError(retryError);
+        logFailure(retryError, retryReason);
+        return failureResult({
+          message: trimmedMessage,
+          history: safeHistory,
+          image,
+          error: retryReason,
+        });
+      }
+    }
+
+    if (!text) {
       return failureResult({
         message: trimmedMessage,
         history: safeHistory,
