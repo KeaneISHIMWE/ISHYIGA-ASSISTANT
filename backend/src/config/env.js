@@ -49,6 +49,10 @@ const env = {
     readEnv("CUSTOMER_API_TIMEOUT_MS", readEnv("CLIENTS_API_TIMEOUT_MS", "8000"))
   ),
   conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
+  studioJwtSecret: readEnv(
+    "STUDIO_JWT_SECRET",
+    readEnv("CONVERSATIONS_API_KEY", "")
+  ),
 };
 
 if (!Number.isInteger(env.port) || env.port <= 0) {

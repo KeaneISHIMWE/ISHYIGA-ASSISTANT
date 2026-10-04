@@ -2,9 +2,12 @@ const OpenAI = require("openai");
 const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
+const {
+  formatConversationMemory,
+} = require("./conversationMemoryService");
 
 const REQUEST_TIMEOUT_MS = 60_000;
-const MAX_HISTORY_MESSAGES = 16;
+const MAX_HISTORY_MESSAGES = 40;
 const FALLBACK_REPLY =
   "Sorry, I didn't get that properly. Could you please explain it to me again?";
 const ESCALATION_REPLY =
@@ -60,17 +63,34 @@ function buildUserContent(message, image) {
   ];
 }
 
-function buildSystemPrompt(clientContext) {
-  if (typeof clientContext !== "string" || !clientContext.trim()) {
+function combineClientContext(clientContext, conversationSummary) {
+  const memoryContext = formatConversationMemory(conversationSummary);
+  return [clientContext, memoryContext]
+    .filter((part) => typeof part === "string" && part.trim())
+    .join("\n\n");
+}
+
+function buildSystemPrompt(clientContext, conversationSummary) {
+  const combined = combineClientContext(clientContext, conversationSummary);
+  if (!combined) {
     return SYSTEM_PROMPT;
   }
 
-  return `${SYSTEM_PROMPT}\n\n${clientContext.trim()}`;
+  return `${SYSTEM_PROMPT}\n\n${combined}`;
 }
 
-function buildInput(message, history, image, clientContext) {
+function buildInput(
+  message,
+  history,
+  image,
+  clientContext,
+  conversationSummary
+) {
   return [
-    { role: "system", content: buildSystemPrompt(clientContext) },
+    {
+      role: "system",
+      content: buildSystemPrompt(clientContext, conversationSummary),
+    },
     ...normalizeHistory(history),
     { role: "user", content: buildUserContent(message, image) },
   ];
@@ -215,6 +235,7 @@ async function generateReply({
   image,
   client,
   clientContext,
+  conversationSummary,
 } = {}) {
   const hasImage = Boolean(image && image.dataUrl);
   if (!hasImage && (typeof message !== "string" || !message.trim())) {
@@ -250,6 +271,9 @@ async function generateReply({
   logger.info("OpenAI request started", {
     model,
     historyCount: safeHistory.length,
+    hasSummary: Boolean(
+      conversationSummary && String(conversationSummary).trim()
+    ),
     hasImage,
   });
 
@@ -261,7 +285,8 @@ async function generateReply({
           trimmedMessage,
           historyForRequest,
           hasImage ? image : null,
-          clientContext
+          clientContext,
+          conversationSummary
         ),
       },
       { timeout: REQUEST_TIMEOUT_MS }
@@ -352,4 +377,5 @@ module.exports = {
   SYSTEM_PROMPT,
   REQUEST_TIMEOUT_MS,
   MAX_HISTORY_MESSAGES,
+  combineClientContext,
 };

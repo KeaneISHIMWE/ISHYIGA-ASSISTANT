@@ -9,6 +9,7 @@ const { webhookRouter } = require("./routes/webhook");
 const { conversationsRouter } = require("./routes/conversations");
 const { dashboardRouter } = require("./routes/dashboard");
 const { openapiRouter } = require("./routes/openapi");
+const { studioRouter } = require("./routes/studio");
 
 const app = express();
 
@@ -18,6 +19,7 @@ if (env.nodeEnv === "production") {
 
 app.use(
   express.json({
+    limit: "2mb",
     verify: (req, _res, buffer) => {
       req.rawBody = buffer;
     },
@@ -31,6 +33,7 @@ app.use("/api/messages", messagesRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/openapi.json", openapiRouter);
+app.use("/api/studio", studioRouter);
 app.use("/webhook", webhookRouter);
 app.use(express.static(path.join(__dirname, "../public")));
 

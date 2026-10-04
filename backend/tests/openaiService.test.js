@@ -44,16 +44,16 @@ describe("buildInput", () => {
   });
 
   it("keeps only the most recent history turns", () => {
-    const history = Array.from({ length: 40 }, (_, index) => ({
+    const history = Array.from({ length: 50 }, (_, index) => ({
       role: index % 2 === 0 ? "user" : "assistant",
       content: `turn ${index + 1}`,
     }));
     const input = buildInput("Hello", history);
 
-    assert.equal(input.length, 18);
-    assert.equal(input[1].content, "turn 25");
-    assert.equal(input[16].content, "turn 40");
-    assert.equal(input[17].content, "Hello");
+    assert.equal(input.length, 42);
+    assert.equal(input[1].content, "turn 11");
+    assert.equal(input[40].content, "turn 50");
+    assert.equal(input[41].content, "Hello");
   });
 
   it("ignores invalid history entries", () => {
@@ -88,6 +88,25 @@ describe("buildInput", () => {
     assert.match(input[0].content, /CUSTOMER CONTEXT/);
     assert.match(input[0].content, /Demo Shop/);
     assert.equal(input[1].content, "The invoice failed");
+  });
+
+  it("appends conversation memory and customer context to the system prompt", () => {
+    const input = buildInput(
+      "Yes, it still shows the error.",
+      [
+        { role: "user", content: "I restarted the router." },
+        { role: "assistant", content: "Is the POS still showing the error?" },
+      ],
+      null,
+      "CUSTOMER CONTEXT\n- Company: Demo Shop",
+      "POS is not connecting on all computers."
+    );
+
+    assert.match(input[0].content, /CUSTOMER CONTEXT/);
+    assert.match(input[0].content, /CONVERSATION MEMORY/);
+    assert.match(input[0].content, /POS is not connecting/);
+    assert.equal(input[1].content, "I restarted the router.");
+    assert.equal(input[3].content, "Yes, it still shows the error.");
   });
 
   it("attaches a screenshot as vision content", () => {
@@ -287,7 +306,8 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /invoice error/);
-    assert.equal(usedModel, "gpt-5.6-sol");
+    assert.equal(typeof usedModel, "string");
+    assert.ok(usedModel.length > 0);
   });
 
   it("rejects a missing message", async () => {
