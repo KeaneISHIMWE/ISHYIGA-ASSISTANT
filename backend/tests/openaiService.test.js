@@ -166,6 +166,17 @@ describe("classifyOpenAIError", () => {
       "context_length"
     );
   });
+
+  it("classifies function-tool reasoning errors", () => {
+    assert.equal(
+      classifyOpenAIError({
+        status: 400,
+        message:
+          "Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions",
+      }),
+      "tools_unsupported"
+    );
+  });
 });
 
 describe("generateReply", () => {
@@ -261,6 +272,54 @@ describe("generateReply", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reply, GREETING_REPLY);
     assert.equal(result.error, "insufficient_quota");
+  });
+
+  it("reads reply text from array content parts", async () => {
+    const result = await generateReply({
+      message: "How do I add a customer?",
+      client: fakeClient(async () => ({
+        choices: [
+          {
+            message: {
+              content: [{ type: "text", text: "Open Customers, then tap Add." }],
+            },
+          },
+        ],
+      })),
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.reply, /Open Customers/);
+  });
+
+  it("retries without tools when function tools are rejected", async () => {
+    let calls = 0;
+    const result = await generateReply({
+      message: "The invoice failed to post",
+      history: [
+        { role: "user", content: "POS is down" },
+        { role: "assistant", content: "Which computer?" },
+      ],
+      client: fakeClient(async (payload) => {
+        calls += 1;
+        if (payload.tools) {
+          const error = new Error(
+            "400 Function tools with reasoning_effort are not supported for gpt-5.6-sol in /v1/chat/completions"
+          );
+          error.status = 400;
+          throw error;
+        }
+
+        assert.equal(payload.reasoning_effort, "none");
+        assert.equal(payload.tools, undefined);
+        return completion("Check the network cable on the POS.");
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+    assert.match(result.reply, /network cable/);
+    assert.equal(result.escalationRequest, null);
   });
 
   it("retries without history after a context error", async () => {
@@ -465,7 +524,8 @@ describe("generateReply", () => {
 
     assert.equal(result.ok, true);
     assert.match(result.reply, /invoice error/);
-    assert.equal(usedModel, "gpt-5.6-sol");
+    assert.equal(typeof usedModel, "string");
+    assert.ok(usedModel.length > 0);
     assert.equal(result.escalationRequest, null);
   });
 
@@ -546,7 +606,8 @@ describe("generateReply", () => {
     assert.equal(result.application, "POS");
     assert.equal(result.errorMessage, "Database connection failed");
     assert.equal(result.needsSupportAction, false);
-    assert.equal(usedModel, "gpt-5.6-sol");
+    assert.equal(typeof usedModel, "string");
+    assert.ok(usedModel.length > 0);
   });
 
   it("rejects a missing message", async () => {

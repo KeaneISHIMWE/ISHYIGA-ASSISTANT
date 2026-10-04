@@ -236,12 +236,44 @@ function failureResult({ message, history, image, error, clientContext }) {
   };
 }
 
-function extractReplyText(response) {
-  const text = response && response.choices && response.choices[0]
-    ? response.choices[0].message && response.choices[0].message.content
-    : "";
+function extractTextFromContent(content) {
+  if (typeof content === "string") {
+    return content.trim();
+  }
 
-  return typeof text === "string" ? text.trim() : "";
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (part && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .join("")
+      .trim();
+  }
+
+  return "";
+}
+
+function extractReplyText(response) {
+  const message =
+    response && response.choices && response.choices[0]
+      ? response.choices[0].message
+      : null;
+  if (!message) {
+    return "";
+  }
+
+  const fromContent = extractTextFromContent(message.content);
+  if (fromContent) {
+    return fromContent;
+  }
+
+  return typeof message.refusal === "string" ? message.refusal.trim() : "";
 }
 
 function extractEscalationRequest(response) {
@@ -319,6 +351,13 @@ function classifyOpenAIError(error) {
 
   if (status === 401 || status === 403) {
     return "auth";
+  }
+
+  if (
+    status === 400 &&
+    /function tools|reasoning_effort|\btools\b/i.test(message)
+  ) {
+    return "tools_unsupported";
   }
 
   if (
@@ -446,9 +485,16 @@ async function analyzeScreenshot({
 function shouldRetryWithoutHistory(reason, historyCount) {
   return (
     historyCount > 0 &&
-    (reason === "api_error" ||
-      reason === "timeout" ||
-      reason === "context_length")
+    (reason === "timeout" || reason === "context_length")
+  );
+}
+
+function shouldRetryWithoutTools(reason, toolsWereEnabled) {
+  return (
+    Boolean(toolsWereEnabled) &&
+    (reason === "tools_unsupported" ||
+      reason === "api_error" ||
+      reason === "timeout")
   );
 }
 
@@ -527,11 +573,11 @@ async function generateReply({
           clientContext,
           conversationSummary
         ),
+        reasoning_effort: "none",
         ...(withTools
           ? {
               tools: [ESCALATE_TOOL],
               tool_choice: "auto",
-              reasoning_effort: "none",
             }
           : {}),
       },
@@ -552,18 +598,59 @@ async function generateReply({
 
   try {
     let response;
+    let usedTools = allowTools;
     try {
-      response = await requestCompletion(safeHistory);
+      response = await requestCompletion(safeHistory, allowTools);
     } catch (error) {
       const reason = classifyOpenAIError(error);
       logFailure(error, reason);
 
-      if (shouldRetryWithoutHistory(reason, safeHistory.length)) {
-        logger.warn("OpenAI request retrying without history", { reason });
-        response = await requestCompletion([]);
-      } else if (reason === "api_error" || reason === "timeout") {
+      if (shouldRetryWithoutTools(reason, allowTools)) {
         logger.warn("OpenAI request retrying without tools", { reason });
-        response = await requestCompletion(safeHistory, false);
+        usedTools = false;
+        try {
+          response = await requestCompletion(safeHistory, false);
+        } catch (retryError) {
+          const retryReason = classifyOpenAIError(retryError);
+          logFailure(retryError, retryReason);
+          if (shouldRetryWithoutHistory(retryReason, safeHistory.length)) {
+            logger.warn("OpenAI request retrying without history", {
+              reason: retryReason,
+            });
+            response = await requestCompletion([], false);
+          } else {
+            return failureResult({
+              message: trimmedMessage,
+              history: safeHistory,
+              image,
+              error: retryReason,
+              clientContext,
+            });
+          }
+        }
+      } else if (shouldRetryWithoutHistory(reason, safeHistory.length)) {
+        logger.warn("OpenAI request retrying without history", { reason });
+        try {
+          response = await requestCompletion([], allowTools);
+        } catch (retryError) {
+          const retryReason = classifyOpenAIError(retryError);
+          logFailure(retryError, retryReason);
+          if (shouldRetryWithoutTools(retryReason, allowTools)) {
+            logger.warn("OpenAI request retrying without tools", {
+              reason: retryReason,
+            });
+            usedTools = false;
+            response = await requestCompletion([], false);
+          } else {
+            return failureResult({
+              message: trimmedMessage,
+              history: safeHistory,
+              image,
+              error: retryReason,
+              clientContext,
+            });
+          }
+        }
       } else {
         return failureResult({
           message: trimmedMessage,
@@ -602,9 +689,10 @@ async function generateReply({
     if (!text && !escalationRequest) {
       logger.warn("OpenAI response received", { empty: true });
       try {
+        usedTools = false;
         response = await requestCompletion(safeHistory, false);
         text = extractReplyText(response);
-        escalationRequest = extractEscalationRequest(response);
+        escalationRequest = null;
       } catch (retryError) {
         const retryReason = classifyOpenAIError(retryError);
         logFailure(retryError, retryReason);
@@ -616,16 +704,16 @@ async function generateReply({
           clientContext,
         });
       }
+    }
 
-      if (!text && !escalationRequest) {
-        return failureResult({
-          message: trimmedMessage,
-          history: safeHistory,
-          image,
-          error: "Empty model response",
-          clientContext,
-        });
-      }
+    if (!text && !escalationRequest) {
+      return failureResult({
+        message: trimmedMessage,
+        history: safeHistory,
+        image,
+        error: "Empty model response",
+        clientContext,
+      });
     }
 
     logger.info("OpenAI response received", {
@@ -643,7 +731,7 @@ async function generateReply({
     return {
       ok: true,
       reply: text || "",
-      escalationRequest: allowTools ? escalationRequest : null,
+      escalationRequest: usedTools ? escalationRequest : null,
       intent,
       needsSupportAction: Boolean(
         screenshotAnalysis && screenshotAnalysis.needsSupportAction
