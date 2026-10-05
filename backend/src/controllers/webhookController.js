@@ -2,7 +2,6 @@ const { logger } = require("../utils/logger");
 const {
   generateReply,
   ESCALATION_REPLY,
-  isGreetingOnly,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
@@ -152,40 +151,6 @@ async function processTextEvents(
       (event.kind !== "text" && event.kind !== "image") ||
       !event.message
     ) {
-      continue;
-    }
-
-    if (event.kind === "text" && isGreetingOnly(event.message)) {
-      const inbound = await persistInbound(event);
-
-      if (inbound.duplicate) {
-        logger.info("Duplicate WhatsApp message skipped", {
-          messageId: event.messageId,
-          customer: maskPhoneNumber(event.customerNumber),
-        });
-        results.push({
-          messageId: event.messageId,
-          conversationId: inbound.conversationId || null,
-          persistedInbound: true,
-          reply: null,
-          sent: false,
-          skipped: "duplicate",
-        });
-        continue;
-      }
-
-      logger.info("WhatsApp greeting skipped", {
-        messageId: event.messageId,
-        customer: maskPhoneNumber(event.customerNumber),
-      });
-      results.push({
-        messageId: event.messageId,
-        conversationId: inbound.conversationId || null,
-        persistedInbound: inbound.ok,
-        reply: null,
-        sent: false,
-        skipped: "greeting",
-      });
       continue;
     }
 

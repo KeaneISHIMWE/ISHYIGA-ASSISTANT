@@ -6,10 +6,7 @@ const {
   processTextEvents,
   IMAGE_UNREADABLE_REPLY,
 } = require("../src/controllers/webhookController");
-const {
-  FALLBACK_REPLY,
-  GREETING_REPLY,
-} = require("../src/services/openaiService");
+const { FALLBACK_REPLY } = require("../src/services/openaiService");
 
 describe("generateRepliesForInboundEvents", () => {
   it("sends text events to Groq and keeps unsupported events out", async () => {
@@ -474,9 +471,7 @@ describe("processTextEvents", () => {
     assert.equal(results[0].reply, "We can help.");
   });
 
-  it("does not send a WhatsApp reply for a hello", async () => {
-    let generated = false;
-    let sent = false;
+  it("sends the model reply for a hello", async () => {
     const results = await processTextEvents(
       [
         {
@@ -491,22 +486,20 @@ describe("processTextEvents", () => {
         markReadAndShowTypingFn: async () => ({ ok: true }),
         persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
         loadHistory: async () => [],
-        generateReplyFn: async () => {
-          generated = true;
-          return { ok: true, reply: GREETING_REPLY };
+        generateReplyFn: async ({ message }) => {
+          assert.equal(message, "Hello");
+          return { ok: true, reply: "Hello 👋 How can I help you today?" };
         },
-        sendTextMessageFn: async () => {
-          sent = true;
+        sendTextMessageFn: async ({ body }) => {
+          assert.match(body, /How can I help/);
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
       }
     );
 
-    assert.equal(generated, false);
-    assert.equal(sent, false);
-    assert.equal(results[0].sent, false);
-    assert.equal(results[0].skipped, "greeting");
+    assert.equal(results[0].sent, true);
+    assert.match(results[0].reply, /How can I help/);
   });
 
   it("does not send a WhatsApp reply when the model fails on a real question", async () => {
