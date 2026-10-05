@@ -72,6 +72,8 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /CARE/i);
     assert.match(SYSTEM_PROMPT, /UNREGISTERED \/ UNRECOGNIZED CONTACT/);
     assert.match(SYSTEM_PROMPT, /NEVER EXPOSE INTERNAL FAILURE MESSAGES/);
+    assert.match(SYSTEM_PROMPT, /technical issue/);
+    assert.match(SYSTEM_PROMPT, /30 minutes/);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);
@@ -202,7 +204,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, "");
+    assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "Empty model response");
   });
 
@@ -217,7 +219,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, "");
+    assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "timeout");
   });
 
@@ -232,7 +234,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, "");
+    assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "rate_limit");
   });
 
@@ -248,7 +250,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, "");
+    assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "insufficient_quota");
   });
 
@@ -375,7 +377,7 @@ describe("generateReply", () => {
     assert.match(result.reply, /services/);
   });
 
-  it("stays silent for a real question when OpenAI fails", async () => {
+  it("sends a technical-issue reply when OpenAI fails", async () => {
     const result = await generateReply({
       message: "The invoice failed to post",
       client: fakeClient(async () => {
@@ -386,7 +388,7 @@ describe("generateReply", () => {
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.reply, "");
+    assert.equal(result.reply, FALLBACK_REPLY);
     assert.equal(result.error, "timeout");
   });
 
@@ -434,18 +436,18 @@ describe("generateReply", () => {
 });
 
 describe("resolveFailedCustomerReply", () => {
-  it("stays silent instead of sending a fallback", () => {
-    assert.equal(resolveFailedCustomerReply([], FALLBACK_REPLY), "");
+  it("returns the technical-issue reply", () => {
+    assert.equal(resolveFailedCustomerReply([], FALLBACK_REPLY), FALLBACK_REPLY);
     assert.equal(
       resolveFailedCustomerReply(
         [{ role: "assistant", content: FALLBACK_REPLY }],
         FALLBACK_REPLY
       ),
-      ""
+      FALLBACK_REPLY
     );
   });
 
-  it("does not escalate after repeated failures", () => {
+  it("keeps the technical-issue reply after repeated failures", () => {
     const history = [
       { role: "user", content: "hello" },
       { role: "assistant", content: FALLBACK_REPLY },
@@ -454,25 +456,31 @@ describe("resolveFailedCustomerReply", () => {
       { role: "user", content: "good morning" },
     ];
 
-    assert.equal(resolveFailedCustomerReply(history, FALLBACK_REPLY), "");
+    assert.equal(
+      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      FALLBACK_REPLY
+    );
   });
 
-  it("stays silent after an earlier escalation", () => {
+  it("keeps the technical-issue reply after an earlier escalation", () => {
     const history = [
       { role: "assistant", content: FALLBACK_REPLY },
       { role: "assistant", content: ESCALATION_REPLY },
     ];
 
-    assert.equal(resolveFailedCustomerReply(history, FALLBACK_REPLY), "");
+    assert.equal(
+      resolveFailedCustomerReply(history, FALLBACK_REPLY),
+      FALLBACK_REPLY
+    );
   });
 
-  it("stays silent on greetings when the model fails", () => {
+  it("uses the technical-issue reply for greetings when the model fails", () => {
     assert.equal(
       resolveCustomerFacingFailure({
         message: "good morning",
         history: [],
       }),
-      ""
+      FALLBACK_REPLY
     );
   });
 });

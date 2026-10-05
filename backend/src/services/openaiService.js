@@ -8,7 +8,8 @@ const {
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_HISTORY_MESSAGES = 40;
-const FALLBACK_REPLY = "";
+const FALLBACK_REPLY =
+  "We're currently experiencing a technical issue that is preventing me from responding properly. Please reach out again after 30 minutes. We apologize for the inconvenience.";
 const ESCALATION_REPLY =
   "I'm having trouble answering right now. Please contact our support team and we'll help you from there.";
 const GREETING_REPLY = "Hello 👋";

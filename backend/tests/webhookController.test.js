@@ -502,8 +502,7 @@ describe("processTextEvents", () => {
     assert.match(results[0].reply, /How can I help/);
   });
 
-  it("does not send a WhatsApp reply when the model fails on a real question", async () => {
-    let sent = false;
+  it("sends a technical-issue reply when the model fails on a real question", async () => {
     const results = await processTextEvents(
       [
         {
@@ -523,20 +522,19 @@ describe("processTextEvents", () => {
           reply: FALLBACK_REPLY,
           error: "api_error",
         }),
-        sendTextMessageFn: async () => {
-          sent = true;
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, FALLBACK_REPLY);
           return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
       }
     );
 
-    assert.equal(sent, false);
-    assert.equal(results[0].sent, false);
-    assert.equal(results[0].reply, "");
+    assert.equal(results[0].sent, true);
+    assert.equal(results[0].reply, FALLBACK_REPLY);
   });
 
-  it("does not send an escalation after two silent failures", async () => {
+  it("sends the technical-issue reply after two earlier failures", async () => {
     const results = await processTextEvents(
       [
         {
@@ -560,14 +558,15 @@ describe("processTextEvents", () => {
           reply: FALLBACK_REPLY,
           error: "api_error",
         }),
-        sendTextMessageFn: async () => {
-          throw new Error("should not send a WhatsApp reply");
+        sendTextMessageFn: async ({ body }) => {
+          assert.equal(body, FALLBACK_REPLY);
+          return { ok: true, outboundId: "wamid.OUT1" };
         },
         persistOutbound: async () => ({ ok: true }),
       }
     );
 
-    assert.equal(results[0].sent, false);
-    assert.equal(results[0].reply, "");
+    assert.equal(results[0].sent, true);
+    assert.equal(results[0].reply, FALLBACK_REPLY);
   });
 });

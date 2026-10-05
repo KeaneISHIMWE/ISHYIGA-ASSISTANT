@@ -2,6 +2,7 @@ const { logger } = require("../utils/logger");
 const {
   generateReply,
   ESCALATION_REPLY,
+  FALLBACK_REPLY,
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
@@ -74,7 +75,7 @@ async function generateRepliesForInboundEvents(
         messageId: event.messageId,
         customerNumber: event.customerNumber,
         ok: false,
-        reply: "",
+        reply: FALLBACK_REPLY,
         error: "unhandled",
       });
     }
@@ -247,7 +248,7 @@ async function processTextEvents(
       logger.error("OpenAI request failed", { reason: "unhandled" });
       generated = {
         ok: false,
-        reply: "",
+        reply: FALLBACK_REPLY,
         error: "unhandled",
       };
     }
