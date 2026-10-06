@@ -74,6 +74,8 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /NEVER EXPOSE INTERNAL FAILURE MESSAGES/);
     assert.match(SYSTEM_PROMPT, /technical issue/);
     assert.match(SYSTEM_PROMPT, /30 minutes/);
+    assert.match(SYSTEM_PROMPT, /GUIDE CONTEXT/);
+    assert.match(SYSTEM_PROMPT, /Never invent features, menus, buttons, prices/);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);

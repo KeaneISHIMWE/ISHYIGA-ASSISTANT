@@ -5,6 +5,11 @@ const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
 const {
   formatConversationMemory,
 } = require("./conversationMemoryService");
+const {
+  retrieveGuideContext,
+  missingGuideReply,
+  shouldRequireGuides,
+} = require("../guides/chatHandler");
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_HISTORY_MESSAGES = 40;
@@ -84,16 +89,26 @@ function buildInput(
   history,
   image,
   clientContext,
-  conversationSummary
+  conversationSummary,
+  guideContext
 ) {
-  return [
+  const messages = [
     {
       role: "system",
       content: buildSystemPrompt(clientContext, conversationSummary),
     },
-    ...normalizeHistory(history),
-    { role: "user", content: buildUserContent(message, image) },
   ];
+  if (typeof guideContext === "string" && guideContext.trim()) {
+    messages.push({
+      role: "system",
+      content: guideContext.trim(),
+    });
+  }
+  messages.push(...normalizeHistory(history), {
+    role: "user",
+    content: buildUserContent(message, image),
+  });
+  return messages;
 }
 
 function buildResponseInput(message, history, image) {
@@ -297,7 +312,7 @@ function classifyOpenAIError(error) {
 
   if (
     status === 400 &&
-    /function tools|reasoning_effort|reasoning\.effort|unsupported parameter|\btools\b/i.test(
+    /function tools|reasoning_effort|reasoning\.effort|unsupported parameter|\btools\b|\btemperature\b/i.test(
       message
     )
   ) {
@@ -363,6 +378,15 @@ async function generateReply({
       ? message.trim()
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
+  const { chunks, guideContext } = retrieveGuideContext(trimmedMessage);
+
+  if (shouldRequireGuides(trimmedMessage, hasImage) && chunks.length === 0) {
+    return {
+      ok: true,
+      reply: missingGuideReply(trimmedMessage),
+      sources: [],
+    };
+  }
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {
@@ -382,11 +406,15 @@ async function generateReply({
         historyForRequest,
         hasImage ? image : null,
         clientContext,
-        conversationSummary
+        conversationSummary,
+        guideContext
       ),
     };
     if (extra.maxTokens !== false) {
       body.max_completion_tokens = 2048;
+    }
+    if (extra.temperature !== false) {
+      body.temperature = 0.2;
     }
     if (extra.reasoning === true) {
       body.reasoning_effort = "none";
@@ -397,9 +425,15 @@ async function generateReply({
   };
 
   const requestResponse = (historyForRequest, extra = {}) => {
+    const instructions = [
+      buildSystemPrompt(clientContext, conversationSummary),
+      guideContext,
+    ]
+      .filter((part) => typeof part === "string" && part.trim())
+      .join("\n\n");
     const body = {
       model,
-      instructions: buildSystemPrompt(clientContext, conversationSummary),
+      instructions,
       input: buildResponseInput(
         trimmedMessage,
         historyForRequest,
@@ -408,6 +442,9 @@ async function generateReply({
     };
     if (extra.maxTokens !== false) {
       body.max_output_tokens = 2048;
+    }
+    if (extra.temperature !== false) {
+      body.temperature = 0.2;
     }
     if (extra.reasoning === true) {
       body.reasoning = { effort: "none" };
@@ -461,6 +498,7 @@ async function generateReply({
           response = await requestModel(safeHistory, {
             reasoning: false,
             maxTokens: false,
+            temperature: false,
           });
         } catch (retryError) {
           const retryReason = classifyOpenAIError(retryError);
@@ -472,6 +510,7 @@ async function generateReply({
             response = await requestModel([], {
               reasoning: false,
               maxTokens: false,
+              temperature: false,
             });
           } else {
             return failureResult({
@@ -503,6 +542,7 @@ async function generateReply({
         response = await requestModel(safeHistory, {
           reasoning: false,
           maxTokens: false,
+          temperature: false,
         });
         text = extractReplyText(response);
       } catch (retryError) {
@@ -538,7 +578,14 @@ async function generateReply({
           ? response.usage.completion_tokens
           : null,
     });
-    return { ok: true, reply: text };
+    return {
+      ok: true,
+      reply: text,
+      sources: chunks.map((chunk) => ({
+        fileName: chunk.fileName,
+        sectionTitle: chunk.sectionTitle,
+      })),
+    };
   } catch (error) {
     const reason = classifyOpenAIError(error);
     logFailure(error, reason);

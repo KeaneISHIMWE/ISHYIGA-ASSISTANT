@@ -2,6 +2,7 @@ const { env } = require("./config/env");
 const { app } = require("./app");
 const { pool } = require("./config/db");
 const { logger } = require("./utils/logger");
+const { loadGuideIndex } = require("./guides");
 
 const SHUTDOWN_MS = 10_000;
 const HOST = "0.0.0.0";
@@ -12,6 +13,11 @@ const server = app.listen(env.port, HOST, () => {
     port: env.port,
     nodeEnv: env.nodeEnv,
     healthCheck: `/api/health`,
+  });
+  loadGuideIndex().catch((error) => {
+    logger.error("Guide index failed to load", {
+      message: error.message,
+    });
   });
 });
 

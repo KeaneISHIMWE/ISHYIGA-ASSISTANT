@@ -7,6 +7,7 @@ RUN npm ci --omit=dev
 
 COPY backend/src ./src
 COPY backend/public ./public
+COPY backend/guide ./guide
 
 ENV NODE_ENV=production
 EXPOSE 4000

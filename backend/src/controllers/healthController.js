@@ -3,6 +3,7 @@ const {
   checkDatabaseSchema,
 } = require("../config/db");
 const { env } = require("../config/env");
+const { guideIndexStats } = require("../guides");
 
 async function getHealth(_req, res) {
   const connection = await checkDatabaseConnection();
@@ -29,6 +30,7 @@ async function getHealth(_req, res) {
       ),
       clientsApiConfigured: Boolean(env.clientsApiUrl || env.customerApiUrl),
       conversationsApiProtected: Boolean(env.conversationsApiKey),
+      guidesIndexed: guideIndexStats().chunks,
     },
   });
 }

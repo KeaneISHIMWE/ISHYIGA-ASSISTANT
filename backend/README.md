@@ -14,22 +14,7 @@ Health check: [http://localhost:4000/api/health](http://localhost:4000/api/healt
 
 ## Phase 2 — PostgreSQL
 
-The app reads `DATABASE_URL` from `.env` and pings the database from `/api/health`.
-
-Docker is **not required** to continue. This machine did not have Docker or a local Postgres install, so Phase 2 uses a hosted Postgres URL. `docker-compose.yml` is ready for later:
-
-```bash
-cd backend
-docker compose up -d
-```
-
-Then set:
-
-```
-DATABASE_URL=postgresql://ishyiga:ishyiga@localhost:5432/ishyiga
-```
-
-Never commit real API keys or the live `DATABASE_URL`.
+The app reads `DATABASE_URL` from `.env` and pings the database from `/api/health`. Use the hosted Postgres URL. Never commit real API keys or the live `DATABASE_URL`.
 
 ## Phase 3 — tables
 
@@ -86,9 +71,11 @@ Invoke-RestMethod -Method Post -Uri http://localhost:4000/api/messages -ContentT
 
 Expect JSON with `"ok": true` and a real `reply`. The server log should include `OpenAI request started` and `OpenAI response received`.
 
-If OpenAI returns a rate limit, timeout, or another API error, the reply is this fallback (the process does not crash):
+If OpenAI returns a rate limit, timeout, or another API error, the reply is the technical-issue message (the process does not crash).
 
-`Sorry, I didn't get that properly. Could you please explain it to me again?`
+## User guides
+
+Official how-to PDFs live in `backend/guide`. They are loaded at startup, chunked by heading, and ranked with BM25 (keyword retrieval). That is enough for this small set of PDFs and needs no vector database. Each client question retrieves the top matching sections and sends them to the model as `GUIDE CONTEXT`. Conversation history is already kept per WhatsApp/conversation. If nothing relevant is found, the assistant does not guess.
 
 ## Phase 7 — Webhook to OpenAI
 
