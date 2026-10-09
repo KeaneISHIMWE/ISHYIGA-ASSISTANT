@@ -10,6 +10,7 @@ const {
   missingGuideReply,
   shouldRequireGuides,
 } = require("../guides/chatHandler");
+const { listAllTutorialsBrief } = require("../guides/tutorials");
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_HISTORY_MESSAGES = 40;
@@ -75,13 +76,26 @@ function combineClientContext(clientContext, conversationSummary) {
     .join("\n\n");
 }
 
+function formatServiceResources() {
+  const lines = [
+    "SERVICE RESOURCES",
+    "Official YouTube tutorials (recommend the one that matches the client's question):",
+    listAllTutorialsBrief(),
+  ];
+  if (env.ishyigaVideoTutorialUrl) {
+    lines.push(`- Extra video tutorial URL: ${env.ishyigaVideoTutorialUrl}`);
+  }
+  if (env.ishyigaOnlineGuideUrl) {
+    lines.push(`- Online guide URL: ${env.ishyigaOnlineGuideUrl}`);
+  }
+  return lines.join("\n");
+}
+
 function buildSystemPrompt(clientContext, conversationSummary) {
   const combined = combineClientContext(clientContext, conversationSummary);
-  if (!combined) {
-    return SYSTEM_PROMPT;
-  }
-
-  return `${SYSTEM_PROMPT}\n\n${combined}`;
+  return [SYSTEM_PROMPT, formatServiceResources(), combined]
+    .filter((part) => typeof part === "string" && part.trim())
+    .join("\n\n");
 }
 
 function buildInput(
@@ -378,9 +392,15 @@ async function generateReply({
       ? message.trim()
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
-  const { chunks, guideContext } = retrieveGuideContext(trimmedMessage);
+  const { chunks, tutorials, guideContext } =
+    retrieveGuideContext(trimmedMessage);
+  const hasTutorials = Array.isArray(tutorials) && tutorials.length > 0;
 
-  if (shouldRequireGuides(trimmedMessage, hasImage) && chunks.length === 0) {
+  if (
+    shouldRequireGuides(trimmedMessage, hasImage) &&
+    chunks.length === 0 &&
+    !hasTutorials
+  ) {
     return {
       ok: true,
       reply: missingGuideReply(trimmedMessage),
@@ -581,10 +601,19 @@ async function generateReply({
     return {
       ok: true,
       reply: text,
-      sources: chunks.map((chunk) => ({
-        fileName: chunk.fileName,
-        sectionTitle: chunk.sectionTitle,
-      })),
+      sources: [
+        ...chunks.map((chunk) => ({
+          fileName: chunk.fileName,
+          sectionTitle: chunk.sectionTitle,
+        })),
+        ...(hasTutorials
+          ? tutorials.map((tutorial) => ({
+              fileName: "YouTube tutorial",
+              sectionTitle: tutorial.title,
+              url: tutorial.url,
+            }))
+          : []),
+      ],
     };
   } catch (error) {
     const reason = classifyOpenAIError(error);

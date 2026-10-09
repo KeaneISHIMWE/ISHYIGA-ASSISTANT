@@ -35,6 +35,8 @@ const env = {
     "OPENAI_VISION_MODEL",
     readEnv("OPENAI_MODEL", "gpt-5.6-sol")
   ),
+  ishyigaVideoTutorialUrl: readEnv("ISHYIGA_VIDEO_TUTORIAL_URL", ""),
+  ishyigaOnlineGuideUrl: readEnv("ISHYIGA_ONLINE_GUIDE_URL", ""),
   customerApiUrl: readEnv("CUSTOMER_API_URL", readEnv("CLIENTS_API_URL", "")),
   customerApiSessionCookie: readEnv("CUSTOMER_API_SESSION_COOKIE", ""),
   customerApiTimeoutMs: Number(

@@ -34,8 +34,10 @@ describe("buildInput", () => {
       { role: "assistant", content: "Hi. How can I help?" },
     ]);
 
-    assert.deepEqual(input, [
-      { role: "system", content: SYSTEM_PROMPT },
+    assert.equal(input[0].role, "system");
+    assert.match(input[0].content, /Ishyiga Software/i);
+    assert.match(input[0].content, /SERVICE RESOURCES/);
+    assert.deepEqual(input.slice(1), [
       { role: "user", content: "Hello" },
       { role: "assistant", content: "Hi. How can I help?" },
       { role: "user", content: "What services do you offer?" },
@@ -76,6 +78,9 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /30 minutes/);
     assert.match(SYSTEM_PROMPT, /GUIDE CONTEXT/);
     assert.match(SYSTEM_PROMPT, /Never invent features, menus, buttons, prices/);
+    assert.match(SYSTEM_PROMPT, /WHAT YOU CAN HELP WITH/);
+    assert.match(SYSTEM_PROMPT, /Friday sport/i);
+    assert.match(SYSTEM_PROMPT, /contract renew/i);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);

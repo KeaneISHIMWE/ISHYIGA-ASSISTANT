@@ -1,14 +1,19 @@
-function formatGuideContext(chunks) {
-  if (!Array.isArray(chunks) || chunks.length === 0) {
-    return "";
+function formatGuideContext(chunks, tutorialBlock = "") {
+  const parts = [];
+
+  if (Array.isArray(chunks) && chunks.length > 0) {
+    const labeled = chunks.map((chunk, index) => {
+      const source = `[${index + 1}] ${chunk.fileName} — ${chunk.sectionTitle}`;
+      return `${source}\n${chunk.text}`;
+    });
+    parts.push(`GUIDE CONTEXT:\n${labeled.join("\n\n---\n\n")}`);
   }
 
-  const labeled = chunks.map((chunk, index) => {
-    const source = `[${index + 1}] ${chunk.fileName} — ${chunk.sectionTitle}`;
-    return `${source}\n${chunk.text}`;
-  });
+  if (typeof tutorialBlock === "string" && tutorialBlock.trim()) {
+    parts.push(tutorialBlock.trim());
+  }
 
-  return `GUIDE CONTEXT:\n${labeled.join("\n\n---\n\n")}`;
+  return parts.join("\n\n");
 }
 
 function detectLanguage(text) {
