@@ -62,6 +62,46 @@ function bm25Score(queryTokens, docTokens, index) {
   return score;
 }
 
+function cosineSimilarity(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+    return 0;
+  }
+
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    dot += a * b;
+    leftNorm += a * a;
+    rightNorm += b * b;
+  }
+
+  const denom = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
+  return denom ? dot / denom : 0;
+}
+
+function retrieveByEmbedding(index, queryVector, { limit = 6, minScore = 0.32 } = {}) {
+  if (
+    !index ||
+    !Array.isArray(index.chunks) ||
+    !Array.isArray(index.embeddings) ||
+    index.embeddings.length !== index.chunks.length
+  ) {
+    return [];
+  }
+
+  return index.chunks
+    .map((chunk, i) => ({
+      ...chunk,
+      score: cosineSimilarity(queryVector, index.embeddings[i]),
+    }))
+    .filter((item) => item.score >= minScore)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 function retrieveChunks(index, query, { limit = 6, minScore = 1.2 } = {}) {
   if (!index || !Array.isArray(index.chunks) || index.chunks.length === 0) {
     return [];
@@ -86,4 +126,6 @@ module.exports = {
   tokenize,
   buildIndex,
   retrieveChunks,
+  retrieveByEmbedding,
+  cosineSimilarity,
 };

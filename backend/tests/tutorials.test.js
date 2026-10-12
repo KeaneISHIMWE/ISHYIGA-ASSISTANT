@@ -35,8 +35,8 @@ describe("video tutorials", () => {
     assert.match(block, /Sales button/);
   });
 
-  it("attaches matched tutorials into guide context", () => {
-    const { guideContext, tutorials } = retrieveGuideContext(
+  it("attaches matched tutorials into guide context", async () => {
+    const { guideContext, tutorials } = await retrieveGuideContext(
       "How to add a new item in POS Mini"
     );
     assert.ok(tutorials.some((item) => item.id === "pos-mini-add-item"));

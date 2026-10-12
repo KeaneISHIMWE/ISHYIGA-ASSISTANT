@@ -75,7 +75,7 @@ If OpenAI returns a rate limit, timeout, or another API error, the reply is the 
 
 ## User guides
 
-Official how-to PDFs live in `backend/guide`. They are loaded at startup, chunked by heading, and ranked with BM25 (keyword retrieval). That is enough for this small set of PDFs and needs no vector database. Each client question retrieves the top matching sections and sends them to the model as `GUIDE CONTEXT`. Conversation history is already kept per WhatsApp/conversation. If nothing relevant is found, the assistant does not guess.
+Official how-to PDFs live in `backend/guide`. They are loaded at startup, chunked by heading, and retrieved with OpenAI embeddings (`OPENAI_EMBEDDING_MODEL`, default `text-embedding-3-small`). Each client question is embedded and the top matching guide sections are sent as `GUIDE CONTEXT`. The assistant must follow those sections and the matched tutorial steps. If embeddings cannot be built, keyword retrieval is used so replies still work. If nothing relevant is found, the assistant does not guess.
 
 ## Phase 7 — Webhook to OpenAI
 

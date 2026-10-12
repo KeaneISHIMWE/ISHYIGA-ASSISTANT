@@ -16,8 +16,8 @@ function isGreetingOnly(message) {
   return typeof message === "string" && GREETING_ONLY_PATTERN.test(message.trim());
 }
 
-function retrieveGuideContext(message) {
-  const chunks = searchGuides(message, { limit: 6, minScore: 1.2 });
+async function retrieveGuideContext(message) {
+  const chunks = await searchGuides(message, { limit: 6 });
   const tutorials = matchTutorials(message, { limit: 2, minScore: 3 });
   const tutorialBlock = formatTutorialContext(tutorials);
   return {
@@ -44,8 +44,8 @@ function shouldRequireGuides(message, hasImage) {
   return true;
 }
 
-function hasGuideOrTutorialHelp(message) {
-  const { chunks, tutorials } = retrieveGuideContext(message);
+async function hasGuideOrTutorialHelp(message) {
+  const { chunks, tutorials } = await retrieveGuideContext(message);
   return chunks.length > 0 || (Array.isArray(tutorials) && tutorials.length > 0);
 }
 

@@ -77,10 +77,13 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /technical issue/);
     assert.match(SYSTEM_PROMPT, /30 minutes/);
     assert.match(SYSTEM_PROMPT, /GUIDE CONTEXT/);
+    assert.match(SYSTEM_PROMPT, /Follow those sources exactly/);
     assert.match(SYSTEM_PROMPT, /Never invent features, menus, buttons, prices/);
     assert.match(SYSTEM_PROMPT, /WHAT YOU CAN HELP WITH/);
     assert.match(SYSTEM_PROMPT, /Friday sport/i);
     assert.match(SYSTEM_PROMPT, /contract renew/i);
+    assert.match(SYSTEM_PROMPT, /NO FAKE TROUBLESHOOTING/);
+    assert.match(SYSTEM_PROMPT, /Do NOT interview them for more information/);
     assert.match(SYSTEM_PROMPT, /WhatsApp/i);
     assert.doesNotMatch(SYSTEM_PROMPT, /AIMABLE/);
     assert.doesNotMatch(SYSTEM_PROMPT, /kimenyi/i);

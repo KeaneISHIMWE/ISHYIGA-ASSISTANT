@@ -392,8 +392,9 @@ async function generateReply({
       ? message.trim()
       : "The client sent a screenshot of the problem.";
   const safeHistory = normalizeHistory(history);
-  const { chunks, tutorials, guideContext } =
-    retrieveGuideContext(trimmedMessage);
+  const { chunks, tutorials, guideContext } = await retrieveGuideContext(
+    trimmedMessage
+  );
   const hasTutorials = Array.isArray(tutorials) && tutorials.length > 0;
 
   if (

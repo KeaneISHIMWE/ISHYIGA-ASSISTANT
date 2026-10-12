@@ -3,7 +3,11 @@ const assert = require("node:assert/strict");
 const path = require("path");
 const { loadGuideFiles } = require("../src/guides/loader");
 const { chunkDocuments } = require("../src/guides/chunker");
-const { buildIndex, retrieveChunks } = require("../src/guides/retriever");
+const {
+  buildIndex,
+  retrieveChunks,
+  retrieveByEmbedding,
+} = require("../src/guides/retriever");
 const {
   formatGuideContext,
   noGuideMatchReply,
@@ -58,6 +62,34 @@ describe("guide retrieval", () => {
     ]);
     assert.match(context, /^GUIDE CONTEXT:/);
     assert.match(context, /ISHYIGA POS GUIDE FOR USERS\.pdf — STOCK/);
+  });
+
+  it("retrieves the closest guide section by embedding", () => {
+    const index = {
+      chunks: [
+        { fileName: "POS.pdf", sectionTitle: "STOCK", text: "Check stock." },
+        { fileName: "POS.pdf", sectionTitle: "LOGIN", text: "Enter password." },
+      ],
+      embeddings: [
+        [1, 0],
+        [0, 1],
+      ],
+    };
+    const hits = retrieveByEmbedding(index, [0.95, 0.05], {
+      limit: 6,
+      minScore: 0.32,
+    });
+    assert.equal(hits[0].sectionTitle, "STOCK");
+    assert.ok(hits.length <= 6);
+  });
+
+  it("returns no embedding matches when the question is unrelated", () => {
+    const index = {
+      chunks: [{ fileName: "POS.pdf", sectionTitle: "STOCK", text: "Check stock." }],
+      embeddings: [[1, 0]],
+    };
+    const hits = retrieveByEmbedding(index, [0, 1], { minScore: 0.32 });
+    assert.equal(hits.length, 0);
   });
 
   it("offers human support when nothing is in the guides", () => {
