@@ -51,6 +51,11 @@ const env = {
   clientsApiTimeoutMs: Number(
     readEnv("CUSTOMER_API_TIMEOUT_MS", readEnv("CLIENTS_API_TIMEOUT_MS", "8000"))
   ),
+  ishyigaMysqlHost: readEnv("ISHYIGA_MYSQL_HOST", "ishyigahigh.mysql.db"),
+  ishyigaMysqlPort: Number(readEnv("ISHYIGA_MYSQL_PORT", "3306")),
+  ishyigaMysqlDatabase: readEnv("ISHYIGA_MYSQL_DATABASE", "ishyigahigh"),
+  ishyigaMysqlUser: readEnv("ISHYIGA_MYSQL_USER", "ishyigahigh"),
+  ishyigaMysqlPassword: readEnv("DB_PASSWORD", ""),
   conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
   studioJwtSecret: readEnv(
     "STUDIO_JWT_SECRET",

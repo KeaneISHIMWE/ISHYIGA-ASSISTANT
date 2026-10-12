@@ -73,6 +73,12 @@ Expect JSON with `"ok": true` and a real `reply`. The server log should include 
 
 If OpenAI returns a rate limit, timeout, or another API error, the reply is the technical-issue message (the process does not crash).
 
+## Account database
+
+WhatsApp identifies the sender by the platform phone number and reads that client's own rows from the Ishyiga MySQL database. Set `DB_PASSWORD` (and optionally `ISHYIGA_MYSQL_HOST`, `ISHYIGA_MYSQL_DATABASE`, `ISHYIGA_MYSQL_USER`). The lookup is read-only. Staff can call `GET /api/account?phone=` with `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
+
+If the password is missing, account-specific answers are not loaded. The assistant must not invent them.
+
 ## User guides
 
 Official how-to PDFs live in `backend/guide`. They are loaded at startup, chunked by heading, and retrieved with OpenAI embeddings (`OPENAI_EMBEDDING_MODEL`, default `text-embedding-3-small`). Each client question is embedded and the top matching guide sections are sent as `GUIDE CONTEXT`. The assistant must follow those sections and the matched tutorial steps. If embeddings cannot be built, keyword retrieval is used so replies still work. If nothing relevant is found, the assistant does not guess.

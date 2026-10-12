@@ -1,7 +1,11 @@
 const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
-const { maskPhoneNumber } = require("./whatsappService");
 const { toCanonicalWhatsappDigits } = require("./contactRules");
+const {
+  isIshyigaMysqlConfigured,
+  lookupVerifiedAccount,
+} = require("./ishyigaAccount");
+const { formatAccountContext } = require("./ishyigaAccount/format");
 
 const DEFAULT_TIMEOUT_MS = 8_000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -429,15 +433,26 @@ function formatUnknownContactContext(phoneNumber) {
 CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT
 WhatsApp number: ${carePhone || "unknown"}
 
-This number was not found in CARE.
+I couldn't verify an account associated with this number. Please confirm your registered contact number or let me guide you through the next steps.
 This is an identity-discovery step, not a normal support conversation.
 Do not treat them as a verified Ishyiga customer.
-Do not invent a company name, contract, payment, product, or version.
+Do not invent a company name, contract, payment, product, version, permission, report, or tax machine.
+Do not disclose account-specific information.
 
 If their message is only a greeting, reply with a short friendly greeting such as "Hello 👋". Do not ask for the company yet. Do not say "how can I help you today?"
-If their message is a question or support request, greet them, say this number isn't registered with us yet, and ask for their name and company. Do not answer the support question yet.
+If their message is a question or support request, greet them, say this number isn't registered with us yet, and ask for their name and company. Do not answer the account question yet.
 Do not say they are not a customer or that access is denied.
 OTP and account-linking are not available. Do not generate an OTP or claim a number was linked.`;
+}
+
+function formatAmbiguousContactContext() {
+  return `CUSTOMER CONTEXT
+
+CONTACT STATUS: UNVERIFIED — AMBIGUOUS MATCH
+
+More than one account matches this WhatsApp number.
+Do not choose one. Do not disclose account, company, contract, permission, report, MRC, or support details.
+Tell them the number matches more than one account and that human support must verify which account is theirs.`;
 }
 
 function formatUnavailableCareContext() {
@@ -445,7 +460,7 @@ function formatUnavailableCareContext() {
 
 CONTACT STATUS: UNVERIFIED — CARE UNAVAILABLE
 
-CARE could not be reached for this WhatsApp number.
+A technical issue is temporarily preventing me from retrieving your account information. Our team will follow up with you.
 Do not invent customer information.
 Do not pretend the customer was found.
 Follow API failure handling.`;
@@ -517,7 +532,7 @@ function hasCachedEntry(phoneNumber) {
 
 async function fetchClientProfile({
   phoneNumber,
-  fetchFn = fetch,
+  lookupFn,
   nowFn = Date.now,
 } = {}) {
   const digits = toCanonicalWhatsappDigits(phoneNumber);
@@ -525,94 +540,63 @@ async function fetchClientProfile({
     return { ok: false, skipped: true, profile: null, error: "missing_phone" };
   }
 
-  const baseUrl = getConfiguredApiUrl();
-  if (!baseUrl) {
+  if (!lookupFn && !isIshyigaMysqlConfigured()) {
     return { ok: false, skipped: true, profile: null, error: "not_configured" };
   }
 
   if (hasCachedEntry(digits)) {
     const cached = readCache(digits, nowFn);
-    return { ok: Boolean(cached), skipped: false, cached: true, profile: cached };
-  }
-
-  const lookupUrl = buildClientsLookupUrl(baseUrl, digits);
-  if (!lookupUrl) {
-    return { ok: false, skipped: true, profile: null, error: "invalid_url" };
-  }
-
-  const headers = { Accept: "application/json" };
-  const apiKey = getApiKey();
-  if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`;
-  }
-  const sessionCookie = getSessionCookie();
-  if (sessionCookie) {
-    headers.Cookie = sessionCookie;
+    return {
+      ok: Boolean(cached),
+      skipped: false,
+      cached: true,
+      profile: cached,
+      error: cached ? null : "not_found",
+    };
   }
 
   try {
-    const response = await fetchFn(lookupUrl, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(getTimeoutMs()),
-    });
-
-    if (response.status === 404) {
+    const lookup = lookupFn || lookupVerifiedAccount;
+    const result = await lookup(digits);
+    if (!result || result.status === "not_found") {
       writeCache(digits, null, nowFn);
-      logger.info("Customer contract not found", {
-        customer: maskPhoneNumber(digits),
-      });
+      logger.info("Account not found for sender");
       return { ok: false, skipped: false, profile: null, error: "not_found" };
     }
 
-    if (!response.ok) {
-      logger.error("Customer contract lookup failed", {
-        customer: maskPhoneNumber(digits),
-        status: response.status,
-      });
-      return { ok: false, skipped: false, profile: null, error: "api_error" };
+    if (result.status === "ambiguous") {
+      logger.info("Account lookup matched more than one account");
+      return { ok: false, skipped: false, profile: null, error: "ambiguous" };
     }
 
-    const payload = await response.json();
-    const profile = normalizeClientProfile(payload, digits);
-
-    if (
-      !profile &&
-      isCareEnvelope(payload) &&
-      (!payloadHasRecord(payload) || !payloadMatchesContact(payload, digits))
-    ) {
-      writeCache(digits, null, nowFn);
-      logger.info("Customer contract not found", {
-        customer: maskPhoneNumber(digits),
-      });
-      return { ok: false, skipped: false, profile: null, error: "not_found" };
+    if (result.status !== "ok" || !result.profile) {
+      return { ok: false, skipped: false, profile: null, error: "empty" };
     }
 
-    writeCache(digits, profile, nowFn);
-
-    logger.info("Customer contract loaded", {
-      customer: maskPhoneNumber(digits),
-      found: Boolean(profile),
-    });
-
+    writeCache(digits, result.profile, nowFn);
+    logger.info("Account loaded for sender");
     return {
-      ok: Boolean(profile),
+      ok: true,
       skipped: false,
-      profile,
-      error: profile ? null : "empty",
+      profile: result.profile,
+      error: null,
     };
   } catch (error) {
-    const timedOut =
-      error && (error.name === "TimeoutError" || error.name === "AbortError");
-    logger.error("Customer contract lookup failed", {
-      customer: maskPhoneNumber(digits),
+    const timedOut = Boolean(
+      error &&
+        (error.name === "TimeoutError" ||
+          error.name === "AbortError" ||
+          error.code === "PROTOCOL_SEQUENCE_TIMEOUT" ||
+          /timeout/i.test(error.message || ""))
+    );
+    logger.error("Account lookup failed", {
       reason: timedOut ? "timeout" : "unhandled",
     });
     return {
       ok: false,
       skipped: false,
       profile: null,
-      error: timedOut ? "timeout" : "unhandled",
+      error: timedOut ? "timeout" : "api_error",
     };
   }
 }
@@ -627,9 +611,14 @@ async function loadClientPromptContext(input = {}, deps = {}) {
   });
   let clientContext = "";
   if (result.profile) {
-    clientContext = formatClientContext(result.profile);
+    clientContext =
+      result.profile.accountId != null
+        ? formatAccountContext(result.profile)
+        : formatClientContext(result.profile);
   } else if (result.error === "not_found") {
     clientContext = formatUnknownContactContext(phoneNumber);
+  } else if (result.error === "ambiguous") {
+    clientContext = formatAmbiguousContactContext();
   } else if (
     result.error === "api_error" ||
     result.error === "timeout" ||
@@ -650,6 +639,7 @@ module.exports = {
   normalizeClientProfile,
   formatClientContext,
   formatUnknownContactContext,
+  formatAmbiguousContactContext,
   formatUnavailableCareContext,
   buildClientsLookupUrl,
   toCarePhone,

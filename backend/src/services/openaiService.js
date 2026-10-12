@@ -5,11 +5,7 @@ const { SYSTEM_PROMPT } = require("./supportSystemPrompt");
 const {
   formatConversationMemory,
 } = require("./conversationMemoryService");
-const {
-  retrieveGuideContext,
-  missingGuideReply,
-  shouldRequireGuides,
-} = require("../guides/chatHandler");
+const { retrieveGuideContext } = require("../guides/chatHandler");
 const { listAllTutorialsBrief } = require("../guides/tutorials");
 
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -396,18 +392,6 @@ async function generateReply({
     trimmedMessage
   );
   const hasTutorials = Array.isArray(tutorials) && tutorials.length > 0;
-
-  if (
-    shouldRequireGuides(trimmedMessage, hasImage) &&
-    chunks.length === 0 &&
-    !hasTutorials
-  ) {
-    return {
-      ok: true,
-      reply: missingGuideReply(trimmedMessage),
-      sources: [],
-    };
-  }
 
   const startedAt = Date.now();
   logger.info("OpenAI request started", {

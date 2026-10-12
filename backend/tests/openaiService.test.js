@@ -79,7 +79,14 @@ describe("buildInput", () => {
     assert.match(SYSTEM_PROMPT, /GUIDE CONTEXT/);
     assert.match(SYSTEM_PROMPT, /Follow those sources exactly/);
     assert.match(SYSTEM_PROMPT, /Never invent features, menus, buttons, prices/);
+    assert.match(SYSTEM_PROMPT, /FOUR SOURCES — FOLLOW ALL OF THEM/);
+    assert.match(SYSTEM_PROMPT, /GUIDES/);
+    assert.match(SYSTEM_PROMPT, /TUTORIALS/);
+    assert.match(SYSTEM_PROMPT, /API/);
+    assert.match(SYSTEM_PROMPT, /SYSTEM PROMPT/);
     assert.match(SYSTEM_PROMPT, /WHAT YOU CAN HELP WITH/);
+    assert.match(SYSTEM_PROMPT, /Which reports am I authorized to view/);
+    assert.match(SYSTEM_PROMPT, /MRC tax machines/);
     assert.match(SYSTEM_PROMPT, /Friday sport/i);
     assert.match(SYSTEM_PROMPT, /contract renew/i);
     assert.match(SYSTEM_PROMPT, /NO FAKE TROUBLESHOOTING/);

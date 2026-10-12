@@ -3,6 +3,7 @@ const { app } = require("./app");
 const { pool } = require("./config/db");
 const { logger } = require("./utils/logger");
 const { loadGuideIndex } = require("./guides");
+const { warmIshyigaAccountSchema } = require("./services/ishyigaAccount");
 
 const SHUTDOWN_MS = 10_000;
 const HOST = "0.0.0.0";
@@ -13,6 +14,9 @@ const server = app.listen(env.port, HOST, () => {
     port: env.port,
     nodeEnv: env.nodeEnv,
     healthCheck: `/api/health`,
+  });
+  warmIshyigaAccountSchema().catch((error) => {
+    logger.error("Ishyiga account schema failed", { message: error.message });
   });
   loadGuideIndex().catch((error) => {
     logger.error("Guide index failed to load", {

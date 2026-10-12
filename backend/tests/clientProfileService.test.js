@@ -213,203 +213,120 @@ describe("fetchClientProfile", () => {
     clearClientProfileCache();
   });
 
-  it("skips the lookup when the customer API is not configured", async () => {
-    const previous = env.clientsApiUrl;
-    env.clientsApiUrl = "";
+  it("skips the lookup when the account database is not configured", async () => {
+    const previous = env.ishyigaMysqlPassword;
+    env.ishyigaMysqlPassword = "";
 
     try {
       const result = await fetchClientProfile({
         phoneNumber: "250788880066",
-        fetchFn: async () => {
-          throw new Error("should not fetch");
-        },
       });
 
       assert.equal(result.skipped, true);
       assert.equal(result.error, "not_configured");
       assert.equal(result.profile, null);
     } finally {
-      env.clientsApiUrl = previous;
+      env.ishyigaMysqlPassword = previous;
     }
   });
 
-  it("loads and caches a contract for a normal customer", async () => {
-    const previousUrl = env.clientsApiUrl;
-    const previousCookie = env.customerApiSessionCookie;
-    const previousApiKey = env.clientsApiKey;
-    env.clientsApiUrl = "https://ishyiga.rw/care";
-    env.customerApiSessionCookie = "care.sid=test-session";
-    env.clientsApiKey = "care_sec_test";
+  it("loads and caches the verified sender account", async () => {
     let calls = 0;
-
-    const fetchFn = async (url, options) => {
+    const lookupFn = async (phone) => {
       calls += 1;
-      assert.equal(
-        url,
-        "https://ishyiga.rw/care/api/vibe-contract/by-phone?phone=0788000000"
-      );
-      assert.equal(options.headers.Authorization, "Bearer care_sec_test");
-      assert.equal(options.headers.Cookie, "care.sid=test-session");
+      assert.equal(phone, "250788000000");
       return {
-        ok: true,
-        status: 200,
-        json: async () => ({
+        status: "ok",
+        profile: {
           name: "John Doe",
           company: "Kigali Mart",
-        }),
+          phoneNumber: phone,
+          fields: [
+            { label: "Full name", value: "John Doe" },
+            { label: "Company", value: "Kigali Mart" },
+          ],
+        },
       };
     };
 
-    try {
-      const first = await loadClientPromptContext({
-        phoneNumber: "250788000000",
-        fetchFn,
-        nowFn: () => 1_000,
-      });
-      const second = await loadClientPromptContext({
-        phoneNumber: "+250788000000",
-        fetchFn,
-        nowFn: () => 2_000,
-      });
+    const first = await loadClientPromptContext({
+      phoneNumber: "250788000000",
+      lookupFn,
+      nowFn: () => 1_000,
+    });
+    const second = await loadClientPromptContext({
+      phoneNumber: "+250788000000",
+      lookupFn,
+      nowFn: () => 2_000,
+    });
 
-      assert.equal(calls, 1);
-      assert.equal(first.ok, true);
-      assert.equal(second.cached, true);
-      assert.match(first.clientContext, /John Doe/);
-      assert.match(first.clientContext, /Kigali Mart/);
-    } finally {
-      env.clientsApiUrl = previousUrl;
-      env.customerApiSessionCookie = previousCookie;
-      env.clientsApiKey = previousApiKey;
-    }
+    assert.equal(calls, 1);
+    assert.equal(first.ok, true);
+    assert.equal(second.cached, true);
+    assert.match(first.clientContext, /John Doe/);
+    assert.match(first.clientContext, /Kigali Mart/);
   });
 
-  it("marks an unknown CARE number as an unverified contact", async () => {
-    const previous = env.clientsApiUrl;
-    env.clientsApiUrl = "https://ishyiga.rw/care";
+  it("marks an unknown number as an unverified contact", async () => {
+    const result = await loadClientPromptContext({
+      phoneNumber: "0781111111",
+      lookupFn: async () => ({ status: "not_found", profile: null }),
+    });
 
-    try {
-      const result = await loadClientPromptContext({
-        phoneNumber: "0781111111",
-        fetchFn: async () => ({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            found: false,
-            noRecord: true,
-            phoneNormalized: "250781111111",
-            client: {
-              id: "000000",
-              companyName: "Unknown Client",
-              managerPhone: "0781111111",
-              phones: ["0781111111"],
-            },
-          }),
-        }),
-      });
-
-      assert.equal(result.ok, false);
-      assert.equal(result.error, "not_found");
-      assert.match(result.clientContext, /UNREGISTERED \/ UNRECOGNIZED CONTACT/);
-      assert.match(result.clientContext, /0781111111/);
-    } finally {
-      env.clientsApiUrl = previous;
-    }
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "not_found");
+    assert.match(result.clientContext, /UNREGISTERED \/ UNRECOGNIZED CONTACT/);
+    assert.match(result.clientContext, /couldn't verify an account/i);
+    assert.match(result.clientContext, /0781111111/);
   });
 
-  it("treats a CARE placeholder record as not found for that contact", async () => {
-    const previous = env.clientsApiUrl;
-    env.clientsApiUrl = "https://ishyiga.rw/care";
+  it("does not disclose details when several accounts match", async () => {
+    const result = await loadClientPromptContext({
+      phoneNumber: "250788000000",
+      lookupFn: async () => ({ status: "ambiguous", profile: null }),
+    });
 
-    try {
-      const result = await fetchClientProfile({
-        phoneNumber: "0781111111",
-        fetchFn: async () => ({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            found: false,
-            noRecord: true,
-            phoneNormalized: "250781111111",
-            client: {
-              id: "000000",
-              companyName: "Unknown Client",
-              managerPhone: "0781111111",
-              phones: ["0781111111"],
-            },
-          }),
-        }),
-      });
-
-      assert.equal(result.ok, false);
-      assert.equal(result.error, "not_found");
-      assert.equal(result.profile, null);
-    } finally {
-      env.clientsApiUrl = previous;
-    }
+    assert.equal(result.error, "ambiguous");
+    assert.match(result.clientContext, /AMBIGUOUS MATCH/);
+    assert.doesNotMatch(result.clientContext, /Kigali Mart/);
   });
 
-  it("returns no profile when the contract is not found", async () => {
-    const previous = env.clientsApiUrl;
-    env.clientsApiUrl = "https://ishyiga.rw/care";
+  it("returns no profile when the account is not found", async () => {
+    const result = await fetchClientProfile({
+      phoneNumber: "250700000000",
+      lookupFn: async () => ({ status: "not_found", profile: null }),
+    });
 
-    try {
-      const result = await fetchClientProfile({
-        phoneNumber: "250700000000",
-        fetchFn: async () => ({
-          ok: false,
-          status: 404,
-        }),
-      });
-
-      assert.equal(result.ok, false);
-      assert.equal(result.error, "not_found");
-      assert.equal(result.profile, null);
-    } finally {
-      env.clientsApiUrl = previous;
-    }
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "not_found");
+    assert.equal(result.profile, null);
   });
 
-  it("fails open when the customer API times out", async () => {
-    const previous = env.clientsApiUrl;
-    env.clientsApiUrl = "https://ishyiga.rw/care";
+  it("fails open when the account database times out", async () => {
+    const result = await fetchClientProfile({
+      phoneNumber: "250788000000",
+      lookupFn: async () => {
+        const error = new Error("connect timeout");
+        error.name = "TimeoutError";
+        throw error;
+      },
+    });
 
-    try {
-      const result = await fetchClientProfile({
-        phoneNumber: "250788000000",
-        fetchFn: async () => {
-          const error = new Error("aborted");
-          error.name = "TimeoutError";
-          throw error;
-        },
-      });
-
-      assert.equal(result.ok, false);
-      assert.equal(result.error, "timeout");
-      assert.equal(result.profile, null);
-    } finally {
-      env.clientsApiUrl = previous;
-    }
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "timeout");
+    assert.equal(result.profile, null);
   });
 
-  it("fails open when the customer API returns an error", async () => {
-    const previous = env.clientsApiUrl;
-    env.clientsApiUrl = "https://ishyiga.rw/care";
+  it("fails open when the account lookup throws", async () => {
+    const result = await fetchClientProfile({
+      phoneNumber: "250788000000",
+      lookupFn: async () => {
+        throw new Error("connection refused");
+      },
+    });
 
-    try {
-      const result = await fetchClientProfile({
-        phoneNumber: "250788000000",
-        fetchFn: async () => ({
-          ok: false,
-          status: 500,
-        }),
-      });
-
-      assert.equal(result.ok, false);
-      assert.equal(result.error, "api_error");
-      assert.equal(result.profile, null);
-    } finally {
-      env.clientsApiUrl = previous;
-    }
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "api_error");
+    assert.equal(result.profile, null);
   });
 });
