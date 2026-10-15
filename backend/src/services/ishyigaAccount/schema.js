@@ -14,13 +14,13 @@ const TABLE_ROLES = {
 };
 
 const COLUMN_ROLES = {
-  accountId: ["GLOBAL_UNIVERSE_ACCOUNT", "UNIVERSE_ACCOUNT", "USERNAME"],
-  fullName: ["FULL_NAME", "FULLNAME", "NAME_USER", "NOM_COMPLET", "NAMES"],
+  accountId: ["UNIVERSE_ACCOUNT", "GLOBAL_UNIVERSE_ACCOUNT", "USERNAME"],
+  fullName: ["NAMES_ACCOUNT", "FULL_NAME", "FULLNAME", "NAME_USER", "NOM_COMPLET", "NAMES"],
   firstName: ["PRENOM", "FIRST_NAME", "FIRSTNAME"],
   lastName: ["NOM", "LAST_NAME", "LASTNAME"],
-  username: ["USERNAME", "USER_NAME", "LOGIN"],
-  email: ["EMAIL", "E_MAIL", "MAIL"],
-  phone: ["PHONE", "TEL", "TELEPHONE", "MOBILE", "GSM", "NUM_TEL", "PHONE_NUMBER"],
+  username: ["USERNAME", "USER_NAME", "LOGIN", "GLOBAL_UNIVERSE_ACCOUNT", "UNIVERSE_ACCOUNT"],
+  email: ["EMAIL_ACCOUNT", "EMAIL", "E_MAIL", "MAIL"],
+  phone: ["PHONE_ACCOUNT", "PHONE", "TEL", "TELEPHONE", "MOBILE", "GSM", "NUM_TEL", "PHONE_NUMBER"],
   language: ["LANGUAGE", "LANG", "LANGUE"],
   depot: ["AUTO_DEPOT", "DEPOT"],
   branch: ["BP_EMPLOYE", "BRANCH", "AGENCE"],
@@ -33,20 +33,20 @@ const COLUMN_ROLES = {
   productName: ["PRODUCT_NAME", "NAME_PRODUCT", "DESIGNATION", "NAME", "LIBELLE"],
   contractType: ["CONTRACT_TYPE", "TYPE_CONTRACT", "TYPE", "PLAN_TYPE", "CONTRAT"],
   amount: ["AMOUNT", "MONTANT", "CONTRACT_AMOUNT"],
-  discount: ["DISCOUNT", "REMISE", "REDUCTION"],
-  startDate: ["START_DATE", "DATE_START", "START", "DEBUT"],
+  discount: ["DISCOUNTED_AMOUNT", "DISCOUNT", "REMISE", "REDUCTION"],
+  startDate: ["START_TIME", "START_DATE", "DATE_START", "START", "DEBUT"],
   duration: ["DURATION", "DUREE"],
-  paidPeriod: ["PAID_PERIOD", "PERIOD_PAID", "PAID_MONTHS", "MOIS_PAYE"],
+  paidPeriod: ["PAYED_PERIOD", "PAID_PERIOD", "PERIOD_PAID", "PAID_MONTHS", "MOIS_PAYE"],
   contractStatus: ["STATUS", "STATUT", "ETAT", "PAYMENT_STATUS"],
   userKey: ["UNIVERSE_ACCOUNT", "GLOBAL_UNIVERSE_ACCOUNT", "USERNAME", "ID_USER"],
   clientKey: ["ID_ACCOUNT", "ID_CLIENT", "CLIENT", "NUM_CLIENT"],
   mrc: ["MRC", "MRC_ID", "ID_MRC", "NUM_MRC"],
   tin: ["TIN", "TIN_NUMBER"],
   sdc: ["SDC_ID", "SDC", "VSDC_ID"],
-  version: ["VSDC_VERSION", "VERSION", "SOFTWARE_VERSION", "VERSION_INSTALLED"],
-  comment: ["COMMENT", "COMMENTS", "COMMENTAIRE", "NOTE"],
-  satisfaction: ["SATISFACTION", "CLIENT_SATISFACTION", "FEEDBACK"],
-  visitDate: ["VISIT_DATE", "DATE_VISIT", "DATE", "CREATED_AT", "HEURE"],
+  version: ["VSDC_VERSION", "SUPPORTED_VERSION_PRODUCTION", "VERSION", "SOFTWARE_VERSION", "VERSION_INSTALLED"],
+  comment: ["SUPPORTED_COMMENT", "COMMENTS", "COMMENT", "COMMENTAIRE", "NOTE"],
+  satisfaction: ["SUPPORTED_CLIENT_SATISFACTION_LEVEL", "SATISFACTION", "CLIENT_SATISFACTION", "FEEDBACK"],
+  visitDate: ["SUPPORTED_DELIVERY_TIME", "TIME_PERFORMED", "CREATION_DATE", "VISIT_DATE", "DATE_VISIT", "DATE", "CREATED_AT", "HEURE"],
 };
 
 function compactName(value) {
@@ -124,7 +124,9 @@ async function loadSchemaCatalog(query, databaseName) {
     `,
     [databaseName]
   );
-  const tableNames = tableRows.map((row) => row.tableName || row.TABLE_NAME);
+  const tableNames = tableRows.map(
+    (row) => row.tableName || row.TABLE_NAME || row.tablename
+  );
   const tables = {};
 
   for (const [role, candidates] of Object.entries(TABLE_ROLES)) {
@@ -144,7 +146,7 @@ async function loadSchemaCatalog(query, databaseName) {
       [databaseName, tableName]
     );
     const columns = safeColumns(
-      columnRows.map((row) => row.columnName || row.COLUMN_NAME)
+      columnRows.map((row) => row.columnName || row.COLUMN_NAME || row.columnname)
     );
     tables[role] = { name: tableName, columns };
   }

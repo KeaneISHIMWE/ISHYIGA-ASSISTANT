@@ -1,10 +1,7 @@
 const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { toCanonicalWhatsappDigits } = require("./contactRules");
-const {
-  isIshyigaMysqlConfigured,
-  lookupVerifiedAccount,
-} = require("./ishyigaAccount");
+const { lookupVerifiedAccount } = require("./ishyigaAccount");
 const { formatAccountContext } = require("./ishyigaAccount/format");
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -538,10 +535,6 @@ async function fetchClientProfile({
   const digits = toCanonicalWhatsappDigits(phoneNumber);
   if (!digits) {
     return { ok: false, skipped: true, profile: null, error: "missing_phone" };
-  }
-
-  if (!lookupFn && !isIshyigaMysqlConfigured()) {
-    return { ok: false, skipped: true, profile: null, error: "not_configured" };
   }
 
   if (hasCachedEntry(digits)) {

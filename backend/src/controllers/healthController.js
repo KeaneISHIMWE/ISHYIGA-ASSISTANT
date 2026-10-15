@@ -28,7 +28,7 @@ async function getHealth(_req, res) {
       whatsappSendConfigured: Boolean(
         env.whatsappAccessToken && env.whatsappPhoneNumberId
       ),
-      clientsApiConfigured: Boolean(env.ishyigaMysqlPassword),
+      clientsApiConfigured: true,
       conversationsApiProtected: Boolean(env.conversationsApiKey),
       guidesIndexed: guideIndexStats().chunks,
     },

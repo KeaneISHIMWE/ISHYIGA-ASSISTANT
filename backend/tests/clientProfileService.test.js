@@ -213,18 +213,18 @@ describe("fetchClientProfile", () => {
     clearClientProfileCache();
   });
 
-  it("skips the lookup when the account database is not configured", async () => {
+  it("reads the PostgreSQL account copy without the private MySQL password", async () => {
     const previous = env.ishyigaMysqlPassword;
     env.ishyigaMysqlPassword = "";
 
     try {
       const result = await fetchClientProfile({
         phoneNumber: "250788880066",
+        lookupFn: async () => ({ status: "not_found" }),
       });
 
-      assert.equal(result.skipped, true);
-      assert.equal(result.error, "not_configured");
-      assert.equal(result.profile, null);
+      assert.equal(result.skipped, false);
+      assert.equal(result.error, "not_found");
     } finally {
       env.ishyigaMysqlPassword = previous;
     }

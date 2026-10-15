@@ -1,13 +1,12 @@
-const { env } = require("../../config/env");
-const { queryIshyigaMysql, isIshyigaMysqlConfigured } = require("../../config/ishyigaMysql");
 const { logger } = require("../../utils/logger");
 const { loadSchemaCatalog } = require("./schema");
 const { lookupAccountByPhone } = require("./repository");
 const { toClientProfile } = require("./format");
+const { queryIshyigaReplica, REPLICA_SCHEMA } = require("./replicaQuery");
 
 async function lookupVerifiedAccount(phoneNumber, deps = {}) {
-  const query = deps.query || queryIshyigaMysql;
-  const databaseName = deps.databaseName || env.ishyigaMysqlDatabase;
+  const query = deps.query || queryIshyigaReplica;
+  const databaseName = deps.databaseName || REPLICA_SCHEMA;
   const result = await lookupAccountByPhone(phoneNumber, { query, databaseName });
   if (result.status !== "ok") {
     return result;
@@ -21,13 +20,8 @@ async function lookupVerifiedAccount(phoneNumber, deps = {}) {
 }
 
 async function warmIshyigaAccountSchema() {
-  if (!isIshyigaMysqlConfigured()) {
-    logger.info("Ishyiga account database is not configured");
-    return null;
-  }
-
   try {
-    const catalog = await loadSchemaCatalog(queryIshyigaMysql, env.ishyigaMysqlDatabase);
+    const catalog = await loadSchemaCatalog(queryIshyigaReplica, REPLICA_SCHEMA);
     const found = Object.entries(catalog.tables)
       .filter((entry) => entry[1])
       .map(([role, table]) => `${role}:${table.name}`);
@@ -42,5 +36,5 @@ async function warmIshyigaAccountSchema() {
 module.exports = {
   lookupVerifiedAccount,
   warmIshyigaAccountSchema,
-  isIshyigaMysqlConfigured,
+  REPLICA_SCHEMA,
 };
