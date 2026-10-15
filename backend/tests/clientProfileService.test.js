@@ -287,7 +287,11 @@ describe("fetchClientProfile", () => {
     });
 
     assert.equal(result.error, "ambiguous");
-    assert.match(result.clientContext, /AMBIGUOUS MATCH/);
+    assert.match(result.clientContext, /NUMBER MATCHES MORE THAN ONE ACCOUNT/);
+    assert.match(
+      result.clientContext,
+      /This phone number is registered on more than one account/
+    );
     assert.doesNotMatch(result.clientContext, /Kigali Mart/);
   });
 

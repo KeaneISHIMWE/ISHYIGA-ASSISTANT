@@ -445,11 +445,12 @@ OTP and account-linking are not available. Do not generate an OTP or claim a num
 function formatAmbiguousContactContext() {
   return `CUSTOMER CONTEXT
 
-CONTACT STATUS: UNVERIFIED — AMBIGUOUS MATCH
+CONTACT STATUS: NUMBER MATCHES MORE THAN ONE ACCOUNT
 
-More than one account matches this WhatsApp number.
+This WhatsApp number is registered on more than one account.
 Do not choose one. Do not disclose account, company, contract, permission, report, MRC, or support details.
-Tell them the number matches more than one account and that human support must verify which account is theirs.`;
+Tell the client what is wrong with the number, in their language. Use this meaning: "This phone number is registered on more than one account, so I can't tell which account is yours. I will ask human support to sort out the right account."
+Do not say the number is not verified, unverified, unrecognized, or unregistered. Do not ask them to confirm or check the number. The problem is that one number points to several accounts.`;
 }
 
 function formatUnavailableCareContext() {

@@ -27,7 +27,7 @@ async function getAccount(req, res) {
   }
   if (result.error === "ambiguous") {
     return res.status(409).json({
-      error: "More than one account matches this number. Human verification is required.",
+      error: "This phone number is registered on more than one account, so I can't tell which account is yours.",
     });
   }
   if (result.error === "timeout" || result.error === "api_error" || result.error === "unhandled") {
