@@ -2,6 +2,7 @@ const { env } = require("../config/env");
 const { logger } = require("../utils/logger");
 const { toCanonicalWhatsappDigits } = require("./contactRules");
 const { lookupVerifiedAccount } = require("./ishyigaAccount");
+const { matchAccountChoice } = require("./ishyigaAccount/accountChoice");
 const { formatAccountContext } = require("./ishyigaAccount/format");
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -439,18 +440,48 @@ Do not disclose account-specific information.
 If their message is only a greeting, reply with a short friendly greeting such as "Hello 👋". Do not ask for the company yet. Do not say "how can I help you today?"
 If their message is a question or support request, greet them, say this number isn't registered with us yet, and ask for their name and company. Do not answer the account question yet.
 Do not say they are not a customer or that access is denied.
-OTP and account-linking are not available. Do not generate an OTP or claim a number was linked.`;
+OTP and account-linking are not available in this chat. Do not generate an OTP or claim a number was linked.
+A support ticket is created only to register or add this phone number. Do not say a human support agent will contact them unless that ticket has been created.
+If they were already told a registration request was submitted and this number is still unregistered, say that human support has not assisted them yet. Do not say the issue was resolved or escalated.`;
 }
 
-function formatAmbiguousContactContext() {
+function accountChoiceLine(candidate, index) {
+  const name = String(candidate.name || candidate.username || "Account").trim();
+  const company = String(candidate.company || "").trim();
+  if (company && company !== name) {
+    return `${index}. ${name} — company ${company}`;
+  }
+  return `${index}. ${name}`;
+}
+
+function formatAmbiguousContactContext(candidates = []) {
+  const choices = (Array.isArray(candidates) ? candidates : []).filter(
+    (candidate) => candidate && (candidate.name || candidate.company || candidate.username)
+  );
+  const lines = choices.map((candidate, index) => accountChoiceLine(candidate, index + 1));
+  const count = lines.length;
+  const list = lines.length ? `\nAccounts on this number:\n${lines.join("\n")}\n` : "";
+  const countSentence = count
+    ? `This phone number is registered on ${count} accounts, so I can't tell which account is yours.`
+    : `This phone number is registered on more than one account, so I can't tell which account is yours.`;
+
   return `CUSTOMER CONTEXT
 
 CONTACT STATUS: NUMBER MATCHES MORE THAN ONE ACCOUNT
 
 This WhatsApp number is registered on more than one account.
-Do not choose one. Do not disclose account, company, contract, permission, report, MRC, or support details.
-Tell the client what is wrong with the number, in their language. Use this meaning: "This phone number is registered on more than one account, so I can't tell which account is yours. I will ask human support to sort out the right account."
+${list}
+Tell the client what is wrong with the number, in their language. Use this meaning: "${countSentence} Choose the company that is yours by replying with its number."
+Then show only the numbered list above. Do not add, rename, or merge accounts.
+Do not choose one for them. Do not disclose contract, payment, permission, report, MRC, or support details until they choose.
+If they already asked a question, tell them you will continue with that question after they choose. Do not answer the account question yet.
 Do not say the number is not verified, unverified, unrecognized, or unregistered. Do not ask them to confirm or check the number. The problem is that one number points to several accounts.`;
+}
+
+function formatChosenAccountContext(profile) {
+  return `${formatAccountContext(profile)}
+
+The client chose this account from the companies on this phone number. Continue helping with the problem they already described. Do not ask them to choose again unless they ask for a different company.`;
 }
 
 function formatUnavailableCareContext() {
@@ -458,7 +489,7 @@ function formatUnavailableCareContext() {
 
 CONTACT STATUS: UNVERIFIED — CARE UNAVAILABLE
 
-A technical issue is temporarily preventing me from retrieving your account information. Our team will follow up with you.
+A technical issue is temporarily preventing me from retrieving your account information. Do not say a support agent will follow up.
 Do not invent customer information.
 Do not pretend the customer was found.
 Follow API failure handling.`;
@@ -532,13 +563,15 @@ async function fetchClientProfile({
   phoneNumber,
   lookupFn,
   nowFn = Date.now,
+  selectedAccountId,
 } = {}) {
   const digits = toCanonicalWhatsappDigits(phoneNumber);
   if (!digits) {
     return { ok: false, skipped: true, profile: null, error: "missing_phone" };
   }
 
-  if (hasCachedEntry(digits)) {
+  const chosenId = String(selectedAccountId || "").trim();
+  if (!chosenId && hasCachedEntry(digits)) {
     const cached = readCache(digits, nowFn);
     return {
       ok: Boolean(cached),
@@ -551,7 +584,7 @@ async function fetchClientProfile({
 
   try {
     const lookup = lookupFn || lookupVerifiedAccount;
-    const result = await lookup(digits);
+    const result = await lookup(digits, chosenId ? { selectedAccountId: chosenId } : {});
     if (!result || result.status === "not_found") {
       writeCache(digits, null, nowFn);
       logger.info("Account not found for sender");
@@ -560,14 +593,22 @@ async function fetchClientProfile({
 
     if (result.status === "ambiguous") {
       logger.info("Account lookup matched more than one account");
-      return { ok: false, skipped: false, profile: null, error: "ambiguous" };
+      return {
+        ok: false,
+        skipped: false,
+        profile: null,
+        error: "ambiguous",
+        candidates: Array.isArray(result.candidates) ? result.candidates : [],
+      };
     }
 
     if (result.status !== "ok" || !result.profile) {
       return { ok: false, skipped: false, profile: null, error: "empty" };
     }
 
-    writeCache(digits, result.profile, nowFn);
+    if (!chosenId) {
+      writeCache(digits, result.profile, nowFn);
+    }
     logger.info("Account loaded for sender");
     return {
       ok: true,
@@ -598,21 +639,45 @@ async function fetchClientProfile({
 async function loadClientPromptContext(input = {}, deps = {}) {
   const phoneNumber =
     typeof input === "string" ? input : input.phoneNumber;
-  const result = await fetchClientProfile({
+  const message = typeof input === "object" ? input.message : "";
+  const history = typeof input === "object" ? input.history : [];
+  const lookupOptions = {
     ...deps,
     ...(typeof input === "object" ? input : {}),
     phoneNumber,
-  });
+  };
+  let result = await fetchClientProfile(lookupOptions);
+  let chosenAccount = false;
+  if (result.error === "ambiguous") {
+    const chosen = matchAccountChoice({
+      message,
+      history,
+      candidates: result.candidates,
+    });
+    if (chosen && chosen.accountId) {
+      const selected = await fetchClientProfile({
+        ...lookupOptions,
+        selectedAccountId: chosen.accountId,
+      });
+      if (selected && selected.profile) {
+        result = selected;
+        chosenAccount = true;
+      }
+    }
+  }
   let clientContext = "";
   if (result.profile) {
-    clientContext =
-      result.profile.accountId != null
-        ? formatAccountContext(result.profile)
-        : formatClientContext(result.profile);
+    if (chosenAccount && result.profile.accountId != null) {
+      clientContext = formatChosenAccountContext(result.profile);
+    } else if (result.profile.accountId != null) {
+      clientContext = formatAccountContext(result.profile);
+    } else {
+      clientContext = formatClientContext(result.profile);
+    }
   } else if (result.error === "not_found") {
     clientContext = formatUnknownContactContext(phoneNumber);
   } else if (result.error === "ambiguous") {
-    clientContext = formatAmbiguousContactContext();
+    clientContext = formatAmbiguousContactContext(result.candidates);
   } else if (
     result.error === "api_error" ||
     result.error === "timeout" ||

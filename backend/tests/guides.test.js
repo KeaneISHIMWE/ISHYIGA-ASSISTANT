@@ -92,7 +92,9 @@ describe("guide retrieval", () => {
     assert.equal(hits.length, 0);
   });
 
-  it("offers human support when nothing is in the guides", () => {
-    assert.match(noGuideMatchReply("en"), /human support/i);
+  it("says the guide has no answer without promising a person", () => {
+    assert.match(noGuideMatchReply("en"), /Ishyiga support guides/);
+    assert.doesNotMatch(noGuideMatchReply("en"), /human support/i);
+    assert.doesNotMatch(noGuideMatchReply("fr"), /support humain/i);
   });
 });

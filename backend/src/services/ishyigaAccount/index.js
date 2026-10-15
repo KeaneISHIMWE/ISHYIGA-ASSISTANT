@@ -7,7 +7,11 @@ const { queryIshyigaReplica, REPLICA_SCHEMA } = require("./replicaQuery");
 async function lookupVerifiedAccount(phoneNumber, deps = {}) {
   const query = deps.query || queryIshyigaReplica;
   const databaseName = deps.databaseName || REPLICA_SCHEMA;
-  const result = await lookupAccountByPhone(phoneNumber, { query, databaseName });
+  const result = await lookupAccountByPhone(phoneNumber, {
+    query,
+    databaseName,
+    selectedAccountId: deps.selectedAccountId,
+  });
   if (result.status !== "ok") {
     return result;
   }

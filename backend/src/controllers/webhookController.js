@@ -6,6 +6,7 @@ const {
   resolveCustomerFacingFailure,
 } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
+const { applyPhoneRegistration } = require("../services/phoneRegistrationTicket");
 const {
   persistInboundEvent,
   persistOutboundReply,
@@ -139,6 +140,7 @@ async function processTextEvents(
     downloadMediaFn = downloadWhatsAppMedia,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
+    applyPhoneRegistrationFn = applyPhoneRegistration,
     typingMinVisibleMs = TYPING_MIN_VISIBLE_MS,
     nowFn = Date.now,
     sleepFn = sleep,
@@ -222,9 +224,12 @@ async function processTextEvents(
 
       if (!generated) {
         let clientContext = "";
+        let clientLookup = null;
         try {
-          const clientLookup = await loadClientProfileFn({
+          clientLookup = await loadClientProfileFn({
             phoneNumber: event.customerNumber,
+            message: event.message,
+            history,
           });
           clientContext =
             clientLookup && clientLookup.clientContext
@@ -236,13 +241,37 @@ async function processTextEvents(
           });
         }
 
-        generated = await generateReplyFn({
-          message: event.message,
-          history,
-          image,
-          clientContext,
-          conversationSummary,
-        });
+        try {
+          const registration = await applyPhoneRegistrationFn({
+            lookup: clientLookup,
+            message: event.message,
+            history,
+            phone: event.customerNumber,
+            customerName: event.customerName || "",
+            conversationId: inbound.conversationId || null,
+          });
+          clientContext = registration.clientContext || clientContext;
+          if (registration.reply) {
+            generated = {
+              ok: registration.ok !== false,
+              reply: registration.reply,
+            };
+          }
+        } catch (_error) {
+          logger.error("Registration ticket check failed", {
+            reason: "unhandled",
+          });
+        }
+
+        if (!generated) {
+          generated = await generateReplyFn({
+            message: event.message,
+            history,
+            image,
+            clientContext,
+            conversationSummary,
+          });
+        }
       }
     } catch (_error) {
       logger.error("OpenAI request failed", { reason: "unhandled" });

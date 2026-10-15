@@ -223,6 +223,43 @@ describe("Ishyiga account lookup", () => {
     });
     assert.equal(result.status, "ambiguous");
     assert.equal(result.profile, null);
+    assert.deepEqual(
+      result.candidates.map((candidate) => [candidate.name, candidate.company]),
+      [
+        ["Alice Uwase", "C1"],
+        ["Second Alice", "C9"],
+      ]
+    );
+    assert.doesNotMatch(JSON.stringify(result.candidates), /hidden|alice@example.com|a2@example.com/);
+  });
+
+  it("loads only the company the sender chose from the matching accounts", async () => {
+    const { query } = createQuery([
+      {
+        GLOBAL_UNIVERSE_ACCOUNT: "U3",
+        FULL_NAME: "Second Alice",
+        USERNAME: "alice2",
+        EMAIL: "a2@example.com",
+        PHONE: "+250788000000",
+        LANGUAGE: "en",
+        AUTO_DEPOT: "DEPOT-9",
+        BP_EMPLOYE: "Huye",
+        AUTHORIZATION: "ALL",
+        ID_ACCOUNT: "C9",
+        PASSWORD: "hidden",
+      },
+    ]);
+    const result = await lookupAccountByPhone("0788000000", {
+      query,
+      databaseName: "ishyigahigh",
+      selectedAccountId: "U3",
+    });
+    const profile = toClientProfile(result.profile, "0788000000");
+
+    assert.equal(result.status, "ok");
+    assert.equal(profile.name, "Second Alice");
+    assert.equal(profile.company, "C9");
+    assert.doesNotMatch(JSON.stringify(profile), /Alice Uwase|hidden|MRC-ALICE/);
   });
 
   it("keeps injection text out of the SQL statement", async () => {

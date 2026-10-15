@@ -37,12 +37,12 @@ function detectLanguage(text) {
 
 function noGuideMatchReply(language = "en") {
   if (language === "rw") {
-    return "Nta makuru mfite kuri icyo mu buyobozi bwa Ishyiga. Nshobora kuguhuza n'umukozi w'ubufasha.";
+    return "Nta makuru mfite kuri icyo mu buyobozi bwa Ishyiga.";
   }
   if (language === "fr") {
-    return "Je n'ai pas cette information dans les guides Ishyiga. Je peux vous mettre en relation avec le support humain.";
+    return "Je n'ai pas cette information dans les guides Ishyiga.";
   }
-  return "I don't have that information in the Ishyiga support guides. I can connect you to human support.";
+  return "I don't have that information in the Ishyiga support guides.";
 }
 
 module.exports = {

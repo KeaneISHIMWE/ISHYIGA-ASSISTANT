@@ -2,6 +2,7 @@ const { randomUUID } = require("node:crypto");
 const { env } = require("../config/env");
 const { generateReply } = require("../services/openaiService");
 const { loadClientPromptContext } = require("../services/clientProfileService");
+const { applyPhoneRegistration } = require("../services/phoneRegistrationTicket");
 const { toCanonicalWhatsappDigits } = require("../services/contactRules");
 const {
   persistInboundEvent,
@@ -49,6 +50,7 @@ async function createMessage(
     generateReplyFn = generateReply,
     persistOutbound = persistOutboundReply,
     loadClientProfileFn = loadClientPromptContext,
+    applyPhoneRegistrationFn = applyPhoneRegistration,
   } = {}
 ) {
   const message = req.body && req.body.message;
@@ -72,6 +74,7 @@ async function createMessage(
   let history = [];
   let conversationSummary = "";
   let clientContext = "";
+  let generated = null;
 
   if (phone) {
     const inbound = await persistInbound({
@@ -102,21 +105,48 @@ async function createMessage(
       }
     }
 
+    let lookup = null;
     try {
-      const lookup = await loadClientProfileFn({ phoneNumber: phone });
-      clientContext =
-        lookup && lookup.clientContext ? lookup.clientContext : "";
+      lookup = await loadClientProfileFn({
+        phoneNumber: phone,
+        message: trimmedMessage,
+        history,
+      });
     } catch (_error) {
       logger.error("Client profile lookup failed", { reason: "api_message" });
     }
+
+    try {
+      const registration = await applyPhoneRegistrationFn({
+        lookup,
+        message: trimmedMessage,
+        history,
+        phone,
+        customerName,
+        conversationId,
+      });
+      clientContext = registration.clientContext || "";
+      if (registration.reply) {
+        generated = {
+          ok: registration.ok !== false,
+          reply: registration.reply,
+        };
+      }
+    } catch (_error) {
+      logger.error("Registration ticket check failed", { reason: "api_message" });
+      clientContext =
+        lookup && lookup.clientContext ? lookup.clientContext : "";
+    }
   }
 
-  const generated = await generateReplyFn({
-    message: trimmedMessage,
-    history,
-    clientContext,
-    conversationSummary,
-  });
+  if (!generated) {
+    generated = await generateReplyFn({
+      message: trimmedMessage,
+      history,
+      clientContext,
+      conversationSummary,
+    });
+  }
 
   if (conversationId && generated.reply) {
     await persistOutbound({

@@ -102,7 +102,7 @@ async function findAccounts(query, table, needles) {
     SELECT ${selectList(table.columns)}
     FROM ${quoteIdent(table.name)}
     WHERE ${clauses.join(" OR ")}
-    LIMIT 8
+    LIMIT 30
   `;
   const rows = await query(sql, params);
   return {
@@ -129,6 +129,33 @@ function displayName(row, table) {
     .filter(Boolean)
     .join(" ");
   return combined;
+}
+
+function buildAccountRecord(row, accounts) {
+  return {
+    accountId: accountIdentity(row, accounts),
+    fullName: displayName(row, accounts),
+    username: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.username)),
+    email: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.email)),
+    phone: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.phone)),
+    language: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.language)),
+    depot: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.depot)),
+    branch: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.branch)),
+    rights: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.rights)),
+    companyId: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.companyId)),
+    companyName: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.companyName)),
+    row,
+  };
+}
+
+function summarizeCandidate(row, accounts) {
+  const account = buildAccountRecord(row, accounts);
+  return {
+    accountId: account.accountId,
+    name: account.fullName || account.username || "",
+    company: account.companyName || account.companyId || "",
+    username: account.username || "",
+  };
 }
 
 async function loadChildren(query, catalog, account) {
@@ -343,7 +370,7 @@ async function loadChildren(query, catalog, account) {
   };
 }
 
-async function lookupAccountByPhone(phoneNumber, { query, databaseName } = {}) {
+async function lookupAccountByPhone(phoneNumber, { query, databaseName, selectedAccountId } = {}) {
   const needles = phoneNeedles(phoneNumber);
   if (!needles.length) {
     return { status: "not_found", profile: null, unresolved: [] };
@@ -367,28 +394,26 @@ async function lookupAccountByPhone(phoneNumber, { query, databaseName } = {}) {
     return { status: "not_found", profile: null, unresolved: [] };
   }
 
-  const identities = [
-    ...new Set(found.rows.map((row) => accountIdentity(row, accounts)).filter(Boolean)),
-  ];
-  if (identities.length > 1) {
-    return { status: "ambiguous", profile: null, unresolved: [] };
+  const rowsById = new Map();
+  for (const row of found.rows) {
+    const id = accountIdentity(row, accounts);
+    if (id && !rowsById.has(id)) {
+      rowsById.set(id, row);
+    }
+  }
+  const identities = [...rowsById.keys()];
+  const selected = String(selectedAccountId || "").trim();
+  if (identities.length > 1 && !(selected && rowsById.has(selected))) {
+    return {
+      status: "ambiguous",
+      profile: null,
+      candidates: [...rowsById.values()].map((row) => summarizeCandidate(row, accounts)),
+      unresolved: [],
+    };
   }
 
-  const row = found.rows[0];
-  const account = {
-    accountId: accountIdentity(row, accounts),
-    fullName: displayName(row, accounts),
-    username: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.username)),
-    email: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.email)),
-    phone: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.phone)),
-    language: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.language)),
-    depot: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.depot)),
-    branch: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.branch)),
-    rights: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.rights)),
-    companyId: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.companyId)),
-    companyName: cell(row, pickColumn(accounts.columns, COLUMN_ROLES.companyName)),
-    row,
-  };
+  const row = identities.length > 1 ? rowsById.get(selected) : found.rows[0];
+  const account = buildAccountRecord(row, accounts);
 
   const children = await loadChildren(query, catalog, account);
   return {

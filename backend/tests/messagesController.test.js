@@ -115,4 +115,34 @@ describe("createMessage", () => {
       { from: "Assistant", text: "Hello Alex." },
     ]);
   });
+
+  it("tells an unregistered client that human support has not assisted yet", async () => {
+    const res = mockRes();
+    await createMessage(
+      { body: { message: "Any update?", phone: "0788000000" } },
+      res,
+      {
+        persistInbound: async () => ({ ok: true, conversationId: "conv-1" }),
+        loadHistory: async () => [],
+        loadClientProfileFn: async () => ({
+          error: "not_found",
+          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+        }),
+        applyPhoneRegistrationFn: async () => ({
+          ok: true,
+          reply:
+            "Human support has not assisted you yet. This number is still not registered.",
+          clientContext: "CONTACT STATUS: UNREGISTERED / UNRECOGNIZED CONTACT",
+        }),
+        generateReplyFn: async () => {
+          throw new Error("should not generate");
+        },
+        persistOutbound: async () => ({ ok: true }),
+      }
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body.reply, /has not assisted you yet/i);
+    assert.doesNotMatch(res.body.reply, /escalated|resolved/i);
+  });
 });

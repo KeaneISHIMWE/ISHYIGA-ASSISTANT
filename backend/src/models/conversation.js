@@ -299,6 +299,43 @@ async function getStats() {
   return result.rows[0];
 }
 
+async function getRegistrationTicket(conversationId) {
+  if (!conversationId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT registration_ticket_id, registration_ticket_at
+      FROM conversations
+      WHERE id = $1
+    `,
+    [conversationId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function saveRegistrationTicket(conversationId, ticketId) {
+  if (!conversationId || !ticketId) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+      UPDATE conversations
+      SET registration_ticket_id = $2,
+          registration_ticket_at = NOW()
+      WHERE id = $1
+        AND registration_ticket_id IS NULL
+      RETURNING id, registration_ticket_id, registration_ticket_at
+    `,
+    [conversationId, ticketId]
+  );
+
+  return result.rows[0] || null;
+}
+
 module.exports = {
   findById,
   findOpenByCustomerId,
@@ -313,4 +350,6 @@ module.exports = {
   findLatestByPhoneDigits,
   findByIdWithCustomer,
   getStats,
+  getRegistrationTicket,
+  saveRegistrationTicket,
 };

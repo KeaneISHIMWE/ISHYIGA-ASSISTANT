@@ -51,6 +51,7 @@ const env = {
   clientsApiTimeoutMs: Number(
     readEnv("CUSTOMER_API_TIMEOUT_MS", readEnv("CLIENTS_API_TIMEOUT_MS", "8000"))
   ),
+  ticketCreationApiKey: readEnv("TICKET_CREATION_API_KEY", ""),
   ishyigaMysqlHost: readEnv("ISHYIGA_MYSQL_HOST", "ishyigahigh.mysql.db"),
   ishyigaMysqlPort: Number(readEnv("ISHYIGA_MYSQL_PORT", "3306")),
   ishyigaMysqlDatabase: readEnv("ISHYIGA_MYSQL_DATABASE", "ishyigahigh"),

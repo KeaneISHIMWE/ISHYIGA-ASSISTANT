@@ -26,8 +26,19 @@ async function getAccount(req, res) {
     });
   }
   if (result.error === "ambiguous") {
+    const accounts = (Array.isArray(result.candidates) ? result.candidates : []).map(
+      (candidate, index) => ({
+        number: index + 1,
+        name: candidate.name || "",
+        company: candidate.company || "",
+      })
+    );
+    const count = accounts.length;
     return res.status(409).json({
-      error: "This phone number is registered on more than one account, so I can't tell which account is yours.",
+      error: count
+        ? `This phone number is registered on ${count} accounts, so I can't tell which account is yours.`
+        : "This phone number is registered on more than one account, so I can't tell which account is yours.",
+      accounts,
     });
   }
   if (result.error === "timeout" || result.error === "api_error" || result.error === "unhandled") {

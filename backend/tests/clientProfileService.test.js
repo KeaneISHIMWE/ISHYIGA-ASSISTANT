@@ -280,18 +280,66 @@ describe("fetchClientProfile", () => {
     assert.match(result.clientContext, /0781111111/);
   });
 
-  it("does not disclose details when several accounts match", async () => {
+  it("lists the companies when several accounts match", async () => {
     const result = await loadClientPromptContext({
       phoneNumber: "250788000000",
-      lookupFn: async () => ({ status: "ambiguous", profile: null }),
+      message: "What is my balance?",
+      lookupFn: async () => ({
+        status: "ambiguous",
+        profile: null,
+        candidates: [
+          { accountId: "A1", name: "Alice Uwase", company: "Kigali Mart" },
+          { accountId: "A2", name: "Bob Habimana", company: "Huye Shop" },
+        ],
+      }),
     });
 
     assert.equal(result.error, "ambiguous");
     assert.match(result.clientContext, /NUMBER MATCHES MORE THAN ONE ACCOUNT/);
-    assert.match(
-      result.clientContext,
-      /This phone number is registered on more than one account/
-    );
+    assert.match(result.clientContext, /registered on 2 accounts/);
+    assert.match(result.clientContext, /1\. Alice Uwase — company Kigali Mart/);
+    assert.match(result.clientContext, /2\. Bob Habimana — company Huye Shop/);
+    assert.match(result.clientContext, /replying with its number/);
+    assert.doesNotMatch(result.clientContext, /status PAID/);
+  });
+
+  it("uses the company the client chooses and keeps helping", async () => {
+    const result = await loadClientPromptContext({
+      phoneNumber: "250788000000",
+      message: "2",
+      history: [
+        { role: "user", content: "What is my balance?" },
+        { role: "assistant", content: "Choose the company that is yours." },
+      ],
+      lookupFn: async (_phone, options = {}) => {
+        if (options.selectedAccountId === "A2") {
+          return {
+            status: "ok",
+            profile: {
+              name: "Bob Habimana",
+              company: "Huye Shop",
+              phoneNumber: "250788000000",
+              accountId: "A2",
+              fields: [{ label: "Contracts", value: "status PAID" }],
+            },
+          };
+        }
+        return {
+          status: "ambiguous",
+          profile: null,
+          candidates: [
+            { accountId: "A1", name: "Alice Uwase", company: "Kigali Mart" },
+            { accountId: "A2", name: "Bob Habimana", company: "Huye Shop" },
+          ],
+        };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.clientContext, /KNOWN CUSTOMER/);
+    assert.match(result.clientContext, /Huye Shop/);
+    assert.match(result.clientContext, /status PAID/);
+    assert.match(result.clientContext, /Continue helping with the problem/);
     assert.doesNotMatch(result.clientContext, /Kigali Mart/);
   });
 
