@@ -417,7 +417,7 @@ ${rows}
 
 IMPORTANT:
 - These values came from the live CARE lookup for this WhatsApp number.
-- Use the real company name in greetings when appropriate.
+- Greet with the company name only, like Hello, Kigali Mart. Do not greet with a username or user id.
 - Never invent information.
 - Do not disclose internal IDs, TIN, or staff details unless the customer asks and it is necessary.
 - Other customer information should only be disclosed when relevant or explicitly requested.

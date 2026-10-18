@@ -24,6 +24,20 @@ function addField(fields, label, value) {
   fields.push({ key: label, label, value: clean });
 }
 
+function greetingCompanyName(value) {
+  const company = text(value);
+  if (!company) {
+    return "";
+  }
+  if (/^\d+$/.test(company)) {
+    return "";
+  }
+  if (/^[a-z0-9._-]+$/i.test(company) && company.includes(".")) {
+    return "";
+  }
+  return company;
+}
+
 function productLabel(contract, planColumns, products, productColumns) {
   const code = rowValue(contract, planColumns, "productCode");
   const productCodeColumn = pickColumn(productColumns, COLUMN_ROLES.productCode);
@@ -48,7 +62,7 @@ function toClientProfile(bundle, phoneNumber) {
   addField(fields, "Depot", account.depot);
   addField(fields, "Branch", account.branch);
   addField(fields, "Account page rights", account.rights);
-  addField(fields, "Company", account.companyName);
+  addField(fields, "Company", greetingCompanyName(account.companyName));
   addField(fields, "Company id", account.companyId);
 
   const functions = (bundle.access || []).map((item) => item.code).filter(Boolean);
@@ -125,7 +139,7 @@ function toClientProfile(bundle, phoneNumber) {
 
   return {
     name: account.fullName || account.username || "",
-    company: account.companyName || account.companyId || "",
+    company: greetingCompanyName(account.companyName),
     email: account.email || "",
     phoneNumber,
     fields,
@@ -137,14 +151,20 @@ function formatAccountContext(profile) {
   const rows = (profile.fields || [])
     .map((field) => `- ${field.label}: ${field.value}`)
     .join("\n");
+  const company = greetingCompanyName(profile.company);
 
   return `CUSTOMER CONTEXT
 
 CONTACT STATUS: KNOWN CUSTOMER
-Company name: ${profile.company || "unavailable"}
+Company name: ${company || "unavailable"}
 WhatsApp contact: ${profile.phoneNumber}. Use only this contact's record.
 
 ${rows}
+
+GREETING:
+- If Company name is available, greet like this: Hello, "${company || "[COMPANY NAME]"}"
+- Never greet with Username, Company id, account id, or a number.
+- If Company name is unavailable, greet with Hello only. Do not insert a username or id.
 
 ACCOUNT DATA RULES:
 - These values belong only to the verified WhatsApp sender.

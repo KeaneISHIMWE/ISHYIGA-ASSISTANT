@@ -2,7 +2,7 @@ const { describe, it, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const { lookupAccountByPhone } = require("../src/services/ishyigaAccount/repository");
 const { resetSchemaCatalog } = require("../src/services/ishyigaAccount/schema");
-const { toClientProfile } = require("../src/services/ishyigaAccount/format");
+const { toClientProfile, formatAccountContext } = require("../src/services/ishyigaAccount/format");
 
 const TABLES = {
   global_account_accounts: {
@@ -175,7 +175,13 @@ describe("Ishyiga account lookup", () => {
 
     assert.equal(result.status, "ok");
     assert.equal(profile.name, "Alice Uwase");
-    assert.equal(profile.company, "C1");
+    assert.equal(profile.company, "");
+    assert.equal(labels["Company id"], "C1");
+    const prompt = formatAccountContext(profile);
+    assert.match(prompt, /Company name: unavailable/);
+    assert.match(prompt, /greet with Hello only/);
+    assert.doesNotMatch(prompt, /Hello, "C1"/);
+    assert.doesNotMatch(prompt, /Hello, "alice"/);
     assert.equal(labels["Authorized functions"], "SALES");
     assert.equal(labels["Authorized reports"], "STOCK_REPORT");
     assert.match(labels.Contracts, /RECURRENT UPDATE/);
@@ -258,7 +264,11 @@ describe("Ishyiga account lookup", () => {
 
     assert.equal(result.status, "ok");
     assert.equal(profile.name, "Second Alice");
-    assert.equal(profile.company, "C9");
+    assert.equal(profile.company, "");
+    assert.equal(
+      profile.fields.find((field) => field.label === "Company id").value,
+      "C9"
+    );
     assert.doesNotMatch(JSON.stringify(profile), /Alice Uwase|hidden|MRC-ALICE/);
   });
 
