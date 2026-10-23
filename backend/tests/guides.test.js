@@ -26,6 +26,65 @@ describe("guide retrieval", () => {
     assert.ok(chunks[0].sectionTitle);
   });
 
+  it("loads the ERP Manchester guide and retrieves it for Manchester questions", async () => {
+    const documents = await loadGuideFiles(GUIDE_DIR);
+    assert.ok(
+      documents.some((doc) => /MANCHESTER/i.test(doc.fileName)),
+      "expected ISHYIGA ERP MANCHESTER GUIDE.md"
+    );
+    const index = buildIndex(chunkDocuments(documents));
+    const hits = retrieveChunks(
+      index,
+      "How do I make an order in Ishyiga Manchester and transform it into an invoice?",
+      { limit: 6, minScore: 0.5 }
+    );
+    assert.ok(hits.length >= 1);
+    assert.ok(
+      hits.some(
+        (hit) =>
+          /GMuTfTH02kg/.test(hit.text) || /SAVEDELIVERY/i.test(hit.text)
+      )
+    );
+  });
+
+  it("loads the channel how-to batch 1 guide and retrieves PLU report steps", async () => {
+    const documents = await loadGuideFiles(GUIDE_DIR);
+    assert.ok(
+      documents.some((doc) => /CHANNEL HOWTO BATCH1/i.test(doc.fileName)),
+      "expected ISHYIGA CHANNEL HOWTO BATCH1.md"
+    );
+    const index = buildIndex(chunkDocuments(documents));
+    const hits = retrieveChunks(index, "How do I view the PLU report in Ishyiga POS?", {
+      limit: 6,
+      minScore: 0.5,
+    });
+    assert.ok(hits.length >= 1);
+    assert.ok(
+      hits.some(
+        (hit) => /EeuZO4yIYJQ/.test(hit.text) || /PLU REPORT/i.test(hit.text)
+      )
+    );
+  });
+
+  it("loads the channel how-to batch 2 guide and retrieves Umusada steps", async () => {
+    const documents = await loadGuideFiles(GUIDE_DIR);
+    assert.ok(
+      documents.some((doc) => /CHANNEL HOWTO BATCH2/i.test(doc.fileName)),
+      "expected ISHYIGA CHANNEL HOWTO BATCH2.md"
+    );
+    const index = buildIndex(chunkDocuments(documents));
+    const hits = retrieveChunks(index, "How do I register on Umusada.com?", {
+      limit: 6,
+      minScore: 0.5,
+    });
+    assert.ok(hits.length >= 1);
+    assert.ok(
+      hits.some(
+        (hit) => /8PfqLUtEOmU/.test(hit.text) || /Umusada.com/i.test(hit.text)
+      )
+    );
+  });
+
   it("retrieves POS guidance for a stock question", async () => {
     const documents = await loadGuideFiles(GUIDE_DIR);
     const index = buildIndex(chunkDocuments(documents));
