@@ -9,33 +9,62 @@ function fail($code, $message)
     exit;
 }
 
-if (isset($_SERVER["REQUEST_METHOD"]) === false || $_SERVER["REQUEST_METHOD"] !== "POST") {
+function assistant_keys_match($expected, $provided)
+{
+    if (!is_string($expected) || !is_string($provided)) {
+        return false;
+    }
+    if (function_exists("hash_equals")) {
+        return hash_equals($expected, $provided);
+    }
+    if (strlen($expected) !== strlen($provided)) {
+        return false;
+    }
+    $result = 0;
+    $length = strlen($expected);
+    for ($i = 0; $i < $length; $i++) {
+        $result |= ord($expected[$i]) ^ ord($provided[$i]);
+    }
+    return $result === 0;
+}
+
+if (!isset($_SERVER["REQUEST_METHOD"]) || $_SERVER["REQUEST_METHOD"] !== "POST") {
     fail(405, "method not allowed");
-}
-
-$configPath = dirname(__DIR__) . "/../ishyiga-assistant.config.php";
-if (is_file($configPath) === false) {
-    $configPath = dirname(__DIR__, 2) . "/ishyiga-assistant.config.php";
-}
-if (is_file($configPath) === false) {
-    fail(500, "bridge is not configured");
-}
-require $configPath;
-
-$key = isset($_SERVER["HTTP_X_ASSISTANT_KEY"]) ? $_SERVER["HTTP_X_ASSISTANT_KEY"] : "";
-if (!defined("ASSISTANT_KEY") || ASSISTANT_KEY === "" || !hash_equals(ASSISTANT_KEY, $key)) {
-    fail(401, "unauthorized");
 }
 
 $raw = file_get_contents("php://input");
 $body = json_decode($raw, true);
-if (is_array($body) === false) {
+if (!is_array($body)) {
     fail(400, "invalid json");
+}
+
+$configPath = dirname(__DIR__) . "/../ishyiga-assistant.config.php";
+if (!is_file($configPath)) {
+    $parent = dirname(__DIR__, 2);
+    if (function_exists("dirname") && version_compare(PHP_VERSION, "7.0.0", ">=")) {
+        $configPath = $parent . "/ishyiga-assistant.config.php";
+    } else {
+        $configPath = dirname(dirname(__DIR__)) . "/ishyiga-assistant.config.php";
+    }
+}
+if (!is_file($configPath)) {
+    fail(500, "bridge is not configured");
+}
+require $configPath;
+
+$key = "";
+if (isset($_SERVER["HTTP_X_ASSISTANT_KEY"])) {
+    $key = (string) $_SERVER["HTTP_X_ASSISTANT_KEY"];
+} elseif (isset($body["key"])) {
+    $key = (string) $body["key"];
+}
+if (!defined("ASSISTANT_KEY") || ASSISTANT_KEY === "" || !assistant_keys_match(ASSISTANT_KEY, $key)) {
+    fail(401, "unauthorized");
 }
 
 $sql = isset($body["sql"]) ? trim((string) $body["sql"]) : "";
 $params = isset($body["params"]) ? $body["params"] : array();
-if ($sql === "" || is_array($params) === false) {
+if ($sql === "" || !is_array($params)) {
     fail(400, "sql and params are required");
 }
 if (count($params) > 80 || strlen($sql) > 8000) {
@@ -57,6 +86,9 @@ $user = defined("DB_USER") ? DB_USER : "ishyigahigh";
 $pass = defined("DB_PASS") ? DB_PASS : "";
 
 try {
+    if (!class_exists("PDO")) {
+        fail(500, "pdo is not available");
+    }
     $pdo = new PDO(
         "mysql:host=" . $host . ";dbname=" . $name . ";charset=utf8mb4",
         $user,

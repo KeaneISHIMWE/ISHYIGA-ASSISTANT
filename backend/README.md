@@ -75,9 +75,11 @@ If OpenAI returns a rate limit, timeout, or another API error, the reply is the 
 
 ## Account database
 
-WhatsApp identifies the sender by the platform phone number and reads that client's own rows from the live OVH MySQL database. The lookup is read-only. Staff can call `GET /api/account?phone=` with `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
+WhatsApp identifies the sender by the platform phone number and reads that client's own rows from the live OVH MySQL database (`ishyigahigh`). The lookup is read-only. Staff can call `GET /api/account?phone=` with `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
 
-If the password is missing, account-specific answers are not loaded. The assistant must not invent them.
+OVH shared MySQL is only reachable from the ishyiga.net hosting. The assistant calls a small read-only PHP bridge on the website (`ISHYIGA_OVH_QUERY_URL` + `ISHYIGA_OVH_QUERY_KEY`). Bridge files live in `backend/ovh-bridge/`; upload with `python scripts/uploadOvhBridge.py` after changing bridge code or database credentials.
+
+If the bridge or password is missing, account-specific answers are not loaded. The assistant must not invent them.
 
 ## User guides
 
