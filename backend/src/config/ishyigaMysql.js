@@ -11,11 +11,17 @@ function isIshyigaMysqlConfigured() {
 }
 
 async function queryViaOvhBridge(sql, params = []) {
+  const bridgeKey = String(env.ishyigaOvhQueryKey || "").trim();
+  if (!bridgeKey || !/^[\x21-\x7E]+$/.test(bridgeKey)) {
+    const error = new Error("OVH bridge key is missing or not ASCII");
+    error.code = "OVH_BRIDGE_KEY_INVALID";
+    throw error;
+  }
   const response = await fetch(env.ishyigaOvhQueryUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Assistant-Key": env.ishyigaOvhQueryKey,
+      "X-Assistant-Key": bridgeKey,
     },
     body: JSON.stringify({ sql, params }),
     signal: AbortSignal.timeout(20_000),

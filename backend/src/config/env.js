@@ -1,4 +1,6 @@
 const path = require("path");
+const { sanitizeSecret, sanitizeUrl } = require("./envSanitize");
+
 require("dotenv").config({
   path: path.join(__dirname, "../../.env"),
   override: true,
@@ -10,6 +12,16 @@ function readEnv(name, fallback) {
     return fallback;
   }
   return value;
+}
+
+function readSecretEnv(name, fallback) {
+  const value = readEnv(name, fallback);
+  return typeof value === "string" ? sanitizeSecret(value) : value;
+}
+
+function readUrlEnv(name, fallback) {
+  const value = readEnv(name, fallback);
+  return typeof value === "string" ? sanitizeUrl(value) : value;
 }
 
 function requireEnv(name) {
@@ -29,7 +41,7 @@ const env = {
   whatsappAccessToken: readEnv("WHATSAPP_ACCESS_TOKEN", ""),
   whatsappPhoneNumberId: readEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
   whatsappApiVersion: readEnv("WHATSAPP_API_VERSION", "v23.0"),
-  openaiApiKey: readEnv("OPENAI_API_KEY", ""),
+  openaiApiKey: readSecretEnv("OPENAI_API_KEY", ""),
   openaiModel: readEnv("OPENAI_MODEL", "gpt-5.6-sol"),
   openaiVisionModel: readEnv(
     "OPENAI_VISION_MODEL",
@@ -57,9 +69,9 @@ const env = {
   ishyigaMysqlDatabase: readEnv("ISHYIGA_MYSQL_DATABASE", "ishyigahigh"),
   ishyigaMysqlUser: readEnv("ISHYIGA_MYSQL_USER", "ishyigahigh"),
   ishyigaMysqlPassword: readEnv("DB_PASSWORD", ""),
-  ishyigaOvhQueryUrl: readEnv("ISHYIGA_OVH_QUERY_URL", ""),
-  ishyigaOvhQueryKey: readEnv("ISHYIGA_OVH_QUERY_KEY", ""),
-  conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
+  ishyigaOvhQueryUrl: readUrlEnv("ISHYIGA_OVH_QUERY_URL", ""),
+  ishyigaOvhQueryKey: readSecretEnv("ISHYIGA_OVH_QUERY_KEY", ""),
+  conversationsApiKey: readSecretEnv("CONVERSATIONS_API_KEY", ""),
   studioJwtSecret: readEnv(
     "STUDIO_JWT_SECRET",
     readEnv("CONVERSATIONS_API_KEY", "")
