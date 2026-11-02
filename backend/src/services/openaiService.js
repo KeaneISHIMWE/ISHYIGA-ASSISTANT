@@ -418,7 +418,7 @@ async function generateReply({
     if (extra.maxTokens !== false) {
       body.max_completion_tokens = 2048;
     }
-    if (extra.temperature !== false) {
+    if (extra.temperature === true) {
       body.temperature = 0.2;
     }
     if (extra.reasoning === true) {
@@ -448,7 +448,7 @@ async function generateReply({
     if (extra.maxTokens !== false) {
       body.max_output_tokens = 2048;
     }
-    if (extra.temperature !== false) {
+    if (extra.temperature === true) {
       body.temperature = 0.2;
     }
     if (extra.reasoning === true) {

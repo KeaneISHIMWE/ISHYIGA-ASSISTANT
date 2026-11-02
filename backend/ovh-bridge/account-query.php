@@ -76,7 +76,10 @@ if (strpos($sql, ";") !== false) {
 if (!preg_match("/^(SELECT|SHOW|WITH)\b/i", $sql)) {
     fail(400, "only read queries are allowed");
 }
-if (preg_match("/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|TRUNCATE|GRANT|REVOKE|LOAD|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b/i", $sql)) {
+if (preg_match("/^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|TRUNCATE|GRANT|REVOKE)\b/i", $sql)) {
+    fail(400, "write or admin queries are not allowed");
+}
+if (preg_match("/\bINTO\s+(OUTFILE|DUMPFILE)\b/i", $sql)) {
     fail(400, "write or admin queries are not allowed");
 }
 

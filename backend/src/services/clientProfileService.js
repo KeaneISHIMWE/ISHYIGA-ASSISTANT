@@ -626,6 +626,11 @@ async function fetchClientProfile({
     );
     logger.error("Account lookup failed", {
       reason: timedOut ? "timeout" : "unhandled",
+      code: error && error.code ? error.code : null,
+      detail:
+        error && typeof error.message === "string"
+          ? error.message.slice(0, 180)
+          : null,
     });
     return {
       ok: false,
