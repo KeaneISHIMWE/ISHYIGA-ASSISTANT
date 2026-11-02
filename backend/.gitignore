@@ -1,6 +1,7 @@
 node_modules/
 .env
 scripts/.ovh-bridge-key.tmp
+scripts/.ovh-bridge-url.tmp
 *.log
 .DS_Store
 Thumbs.db

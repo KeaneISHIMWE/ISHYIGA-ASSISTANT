@@ -3,7 +3,12 @@ function stripBom(value) {
 }
 
 function sanitizeUrl(value) {
-  return stripBom(value).trim();
+  const cleaned = stripBom(value).trim();
+  const match = cleaned.match(/https?:\/\/[^\s"'<>]+/i);
+  if (match) {
+    return match[0];
+  }
+  return cleaned.replace(/[^\x21-\x7E]/g, "").trim();
 }
 
 function sanitizeSecret(value) {
