@@ -38,6 +38,54 @@ function greetingCompanyName(value) {
   return company;
 }
 
+function collectTaxpayerNames(credentialRows, credentialTable) {
+  const column = pickColumn(
+    credentialTable && credentialTable.columns,
+    COLUMN_ROLES.taxpayerName
+  );
+  if (!column || !Array.isArray(credentialRows)) {
+    return [];
+  }
+  return credentialRows
+    .map((row) => greetingCompanyName(row[column]))
+    .filter(Boolean);
+}
+
+function pickDominantCompanyName(names) {
+  const unique = [...new Set(names.filter(Boolean))];
+  if (!unique.length) {
+    return "";
+  }
+  if (unique.length === 1) {
+    return unique[0];
+  }
+
+  const counts = new Map();
+  for (const name of names) {
+    if (!name) {
+      continue;
+    }
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  let best = "";
+  let bestCount = 0;
+  for (const [name, count] of counts) {
+    if (count > bestCount || (count === bestCount && name.localeCompare(best) < 0)) {
+      best = name;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function resolveCompanyDisplayName(rawColumnValue, credentialRows, credentialTable) {
+  const fromColumn = greetingCompanyName(rawColumnValue);
+  if (fromColumn) {
+    return fromColumn;
+  }
+  return pickDominantCompanyName(collectTaxpayerNames(credentialRows, credentialTable));
+}
+
 function productLabel(contract, planColumns, products, productColumns) {
   const code = rowValue(contract, planColumns, "productCode");
   const productCodeColumn = pickColumn(productColumns, COLUMN_ROLES.productCode);
@@ -178,4 +226,6 @@ ACCOUNT DATA RULES:
 module.exports = {
   toClientProfile,
   formatAccountContext,
+  greetingCompanyName,
+  resolveCompanyDisplayName,
 };

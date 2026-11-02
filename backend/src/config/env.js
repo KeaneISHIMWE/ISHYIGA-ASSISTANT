@@ -57,6 +57,8 @@ const env = {
   ishyigaMysqlDatabase: readEnv("ISHYIGA_MYSQL_DATABASE", "ishyigahigh"),
   ishyigaMysqlUser: readEnv("ISHYIGA_MYSQL_USER", "ishyigahigh"),
   ishyigaMysqlPassword: readEnv("DB_PASSWORD", ""),
+  ishyigaOvhQueryUrl: readEnv("ISHYIGA_OVH_QUERY_URL", ""),
+  ishyigaOvhQueryKey: readEnv("ISHYIGA_OVH_QUERY_KEY", ""),
   conversationsApiKey: readEnv("CONVERSATIONS_API_KEY", ""),
   studioJwtSecret: readEnv(
     "STUDIO_JWT_SECRET",

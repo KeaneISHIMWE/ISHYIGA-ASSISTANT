@@ -4,7 +4,38 @@ const { env } = require("./env");
 let pool = null;
 
 function isIshyigaMysqlConfigured() {
+  if (env.ishyigaOvhQueryUrl && env.ishyigaOvhQueryKey) {
+    return true;
+  }
   return Boolean(env.ishyigaMysqlPassword && env.ishyigaMysqlHost && env.ishyigaMysqlDatabase);
+}
+
+async function queryViaOvhBridge(sql, params = []) {
+  const response = await fetch(env.ishyigaOvhQueryUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Assistant-Key": env.ishyigaOvhQueryKey,
+    },
+    body: JSON.stringify({ sql, params }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    const error = new Error("OVH account read did not return JSON");
+    error.code = "OVH_BRIDGE_BAD_RESPONSE";
+    throw error;
+  }
+  if (!response.ok || !payload || payload.ok !== true || !Array.isArray(payload.rows)) {
+    const error = new Error(
+      (payload && payload.error) || `OVH account read failed (${response.status})`
+    );
+    error.code = "OVH_BRIDGE_QUERY_FAILED";
+    throw error;
+  }
+  return payload.rows;
 }
 
 function getIshyigaMysqlPool() {
@@ -25,7 +56,7 @@ function getIshyigaMysqlPool() {
       database: env.ishyigaMysqlDatabase,
       waitForConnections: true,
       connectionLimit: 5,
-      connectTimeout: 8_000,
+      connectTimeout: 20_000,
       enableKeepAlive: true,
       ssl,
     });
@@ -35,6 +66,10 @@ function getIshyigaMysqlPool() {
 }
 
 async function queryIshyigaMysql(sql, params = []) {
+  if (env.ishyigaOvhQueryUrl && env.ishyigaOvhQueryKey) {
+    return queryViaOvhBridge(sql, params);
+  }
+
   const active = getIshyigaMysqlPool();
   if (!active) {
     const error = new Error("Ishyiga MySQL is not configured");
@@ -42,7 +77,7 @@ async function queryIshyigaMysql(sql, params = []) {
     throw error;
   }
 
-  const [rows] = await active.query({ sql, timeout: 8_000 }, params);
+  const [rows] = await active.query({ sql, timeout: 20_000 }, params);
   return rows;
 }
 

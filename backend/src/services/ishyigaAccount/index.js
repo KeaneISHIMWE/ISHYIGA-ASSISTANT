@@ -1,12 +1,17 @@
+const { env } = require("../../config/env");
+const { queryIshyigaMysql } = require("../../config/ishyigaMysql");
 const { logger } = require("../../utils/logger");
 const { loadSchemaCatalog } = require("./schema");
 const { lookupAccountByPhone } = require("./repository");
 const { toClientProfile } = require("./format");
-const { queryIshyigaReplica, REPLICA_SCHEMA } = require("./replicaQuery");
+
+function accountDatabaseName() {
+  return env.ishyigaMysqlDatabase;
+}
 
 async function lookupVerifiedAccount(phoneNumber, deps = {}) {
-  const query = deps.query || queryIshyigaReplica;
-  const databaseName = deps.databaseName || REPLICA_SCHEMA;
+  const query = deps.query || queryIshyigaMysql;
+  const databaseName = deps.databaseName || accountDatabaseName();
   const result = await lookupAccountByPhone(phoneNumber, {
     query,
     databaseName,
@@ -25,14 +30,22 @@ async function lookupVerifiedAccount(phoneNumber, deps = {}) {
 
 async function warmIshyigaAccountSchema() {
   try {
-    const catalog = await loadSchemaCatalog(queryIshyigaReplica, REPLICA_SCHEMA);
+    const catalog = await loadSchemaCatalog(queryIshyigaMysql, accountDatabaseName());
     const found = Object.entries(catalog.tables)
       .filter((entry) => entry[1])
       .map(([role, table]) => `${role}:${table.name}`);
-    logger.info("Ishyiga account schema ready", { tables: found });
+    logger.info("Ishyiga account schema ready", {
+      source: "ovh-mysql",
+      database: accountDatabaseName(),
+      tables: found,
+    });
     return catalog;
   } catch (error) {
-    logger.error("Ishyiga account schema failed", { message: error.message });
+    logger.error("Ishyiga account schema failed", {
+      source: "ovh-mysql",
+      message: error.message,
+      code: error.code,
+    });
     return null;
   }
 }
@@ -40,5 +53,5 @@ async function warmIshyigaAccountSchema() {
 module.exports = {
   lookupVerifiedAccount,
   warmIshyigaAccountSchema,
-  REPLICA_SCHEMA,
+  accountDatabaseName,
 };

@@ -108,8 +108,16 @@ const TABLES = {
     ],
   },
   system_credentials: {
-    columns: ["MRC", "TIN", "SDC_ID"],
-    rows: [{ MRC: "MRC-ALICE", TIN: "100", SDC_ID: "SDC-1" }],
+    columns: ["MRC", "MRC_VCIS", "TIN", "SDC_ID", "NAME_TAXPAYER"],
+    rows: [
+      {
+        MRC: "MRC-ALICE",
+        MRC_VCIS: "MRC-ALICE",
+        TIN: "100",
+        SDC_ID: "SDC-1",
+        NAME_TAXPAYER: "Kigali Mart Ltd",
+      },
+    ],
   },
   tasks_performance: {
     columns: ["SDC_ID", "VSDC_VERSION", "DATE"],
@@ -175,11 +183,12 @@ describe("Ishyiga account lookup", () => {
 
     assert.equal(result.status, "ok");
     assert.equal(profile.name, "Alice Uwase");
-    assert.equal(profile.company, "");
+    assert.equal(profile.company, "Kigali Mart Ltd");
+    assert.equal(labels["Company"], "Kigali Mart Ltd");
     assert.equal(labels["Company id"], "C1");
     const prompt = formatAccountContext(profile);
-    assert.match(prompt, /Company name: unavailable/);
-    assert.match(prompt, /greet with Hello only/);
+    assert.match(prompt, /Company name: Kigali Mart Ltd/);
+    assert.match(prompt, /Hello, "Kigali Mart Ltd"/);
     assert.doesNotMatch(prompt, /Hello, "C1"/);
     assert.doesNotMatch(prompt, /Hello, "alice"/);
     assert.equal(labels["Authorized functions"], "SALES");
@@ -232,8 +241,8 @@ describe("Ishyiga account lookup", () => {
     assert.deepEqual(
       result.candidates.map((candidate) => [candidate.name, candidate.company]),
       [
-        ["Alice Uwase", "C1"],
-        ["Second Alice", "C9"],
+        ["Alice Uwase", "Kigali Mart Ltd"],
+        ["Second Alice", ""],
       ]
     );
     assert.doesNotMatch(JSON.stringify(result.candidates), /hidden|alice@example.com|a2@example.com/);
@@ -269,6 +278,7 @@ describe("Ishyiga account lookup", () => {
       profile.fields.find((field) => field.label === "Company id").value,
       "C9"
     );
+    assert.doesNotMatch(formatAccountContext(profile), /Hello, "C9"/);
     assert.doesNotMatch(JSON.stringify(profile), /Alice Uwase|hidden|MRC-ALICE/);
   });
 

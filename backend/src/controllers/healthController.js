@@ -3,6 +3,7 @@ const {
   checkDatabaseSchema,
 } = require("../config/db");
 const { env } = require("../config/env");
+const { isIshyigaMysqlConfigured } = require("../config/ishyigaMysql");
 const { guideIndexStats } = require("../guides");
 
 async function getHealth(_req, res) {
@@ -28,7 +29,7 @@ async function getHealth(_req, res) {
       whatsappSendConfigured: Boolean(
         env.whatsappAccessToken && env.whatsappPhoneNumberId
       ),
-      clientsApiConfigured: true,
+      clientsApiConfigured: isIshyigaMysqlConfigured(),
       conversationsApiProtected: Boolean(env.conversationsApiKey),
       guidesIndexed: guideIndexStats().chunks,
     },

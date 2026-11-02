@@ -75,7 +75,7 @@ If OpenAI returns a rate limit, timeout, or another API error, the reply is the 
 
 ## Account database
 
-WhatsApp identifies the sender by the platform phone number and reads that client's own rows from the Ishyiga MySQL database. Set `DB_PASSWORD` (and optionally `ISHYIGA_MYSQL_HOST`, `ISHYIGA_MYSQL_DATABASE`, `ISHYIGA_MYSQL_USER`). The lookup is read-only. Staff can call `GET /api/account?phone=` with `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
+WhatsApp identifies the sender by the platform phone number and reads that client's own rows from the live OVH MySQL database. The lookup is read-only. Staff can call `GET /api/account?phone=` with `Authorization: Bearer <CONVERSATIONS_API_KEY>`.
 
 If the password is missing, account-specific answers are not loaded. The assistant must not invent them.
 

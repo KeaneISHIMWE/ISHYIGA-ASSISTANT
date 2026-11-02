@@ -7,3 +7,4 @@ node_modules/
 Thumbs.db
 conversation-export.txt
 .cache/
+backend/ovh-bridge/account-query.config.php

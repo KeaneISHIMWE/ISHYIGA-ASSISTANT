@@ -1,4 +1,5 @@
 const { toCanonicalWhatsappDigits } = require("../contactRules");
+const { resolveCompanyDisplayName } = require("./format");
 const {
   COLUMN_ROLES,
   quoteIdent,
@@ -148,14 +149,56 @@ function buildAccountRecord(row, accounts) {
   };
 }
 
-function summarizeCandidate(row, accounts) {
-  const account = buildAccountRecord(row, accounts);
+function summarizeCandidate(account) {
   return {
     accountId: account.accountId,
     name: account.fullName || account.username || "",
-    company: account.companyName || account.companyId || "",
+    company: resolveCompanyDisplayName(account.companyName) || "",
     username: account.username || "",
   };
+}
+
+async function resolveCompanyNameForClient(query, catalog, account, credentials = null) {
+  const credentialTable = catalog.tables.systemCredentials;
+  if (Array.isArray(credentials)) {
+    return resolveCompanyDisplayName(account.companyName, credentials, credentialTable);
+  }
+
+  const companyId = account.companyId;
+  const mrcTable = catalog.tables.paymentMrc;
+  if (!companyId || !mrcTable || !credentialTable) {
+    return resolveCompanyDisplayName(account.companyName, [], credentialTable);
+  }
+
+  const clientKey = pickColumn(mrcTable.columns, COLUMN_ROLES.clientKey);
+  const mrcColumn = pickColumn(mrcTable.columns, COLUMN_ROLES.mrc);
+  const credentialMrcColumn = pickColumn(credentialTable.columns, COLUMN_ROLES.mrc);
+  if (!clientKey || !mrcColumn || !credentialMrcColumn) {
+    return resolveCompanyDisplayName(account.companyName, [], credentialTable);
+  }
+
+  const mrcRows = await selectWhere(
+    query,
+    mrcTable,
+    mrcTable.columns,
+    clientKey,
+    [companyId],
+    { limit: CHILD_LIMIT }
+  );
+  const mrcIds = mrcRows.map((row) => cell(row, mrcColumn)).filter(Boolean);
+  if (!mrcIds.length) {
+    return resolveCompanyDisplayName(account.companyName, [], credentialTable);
+  }
+
+  const credentialRows = await selectWhere(
+    query,
+    credentialTable,
+    credentialTable.columns,
+    credentialMrcColumn,
+    mrcIds,
+    { limit: CHILD_LIMIT }
+  );
+  return resolveCompanyDisplayName(account.companyName, credentialRows, credentialTable);
 }
 
 async function loadChildren(query, catalog, account) {
@@ -404,10 +447,16 @@ async function lookupAccountByPhone(phoneNumber, { query, databaseName, selected
   const identities = [...rowsById.keys()];
   const selected = String(selectedAccountId || "").trim();
   if (identities.length > 1 && !(selected && rowsById.has(selected))) {
+    const candidates = [];
+    for (const row of rowsById.values()) {
+      const account = buildAccountRecord(row, accounts);
+      account.companyName = await resolveCompanyNameForClient(query, catalog, account);
+      candidates.push(summarizeCandidate(account));
+    }
     return {
       status: "ambiguous",
       profile: null,
-      candidates: [...rowsById.values()].map((row) => summarizeCandidate(row, accounts)),
+      candidates,
       unresolved: [],
     };
   }
@@ -416,6 +465,11 @@ async function lookupAccountByPhone(phoneNumber, { query, databaseName, selected
   const account = buildAccountRecord(row, accounts);
 
   const children = await loadChildren(query, catalog, account);
+  account.companyName = resolveCompanyDisplayName(
+    account.companyName,
+    children.credentials,
+    catalog.tables.systemCredentials
+  );
   return {
     status: "ok",
     profile: { account, ...children, phoneColumns: found.phoneColumns },
