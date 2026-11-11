@@ -73,6 +73,14 @@ Expect JSON with `"ok": true` and a real `reply`. The server log should include 
 
 If OpenAI returns a rate limit, timeout, or another API error, the reply is the technical-issue message (the process does not crash).
 
+## AI Studio
+
+Learners open `/ai-studio` and sign in with the WhatsApp number already stored on their assistant conversations. A 6-digit code is sent with the existing WhatsApp sender. The code is stored only as a hash and expires in 5 minutes.
+
+They can read their own chats and correct an assistant reply. Personal notes stay on that person. General corrections wait for a Knowledge Studio administrator to approve them. Approved notes are added to later WhatsApp replies. Original chat messages are not edited.
+
+WhatsApp can deliver that code as a normal message only while the 24-hour customer-care window is open. A cold login needs an approved WhatsApp authentication template, which is not configured yet. If delivery fails, the screen says so and does not pretend the code was sent.
+
 ## Account database
 
 WhatsApp identifies the sender by the platform phone number and reads that client's own rows from the live OVH MySQL database (`ishyigahigh`). The lookup is read-only. Staff can call `GET /api/account?phone=` with `Authorization: Bearer <CONVERSATIONS_API_KEY>`.

@@ -251,6 +251,20 @@ async function processTextEvents(
             conversationId: inbound.conversationId || null,
           });
           clientContext = registration.clientContext || clientContext;
+          try {
+            const { loadLearningContext } = require("../services/aiStudio/learningContext");
+            const learning = await loadLearningContext({
+              phone: event.customerNumber,
+              question: event.message,
+            });
+            if (learning) {
+              clientContext = [clientContext, learning].filter(Boolean).join("\n\n");
+            }
+          } catch (learningError) {
+            logger.error("Learning context failed", {
+              message: learningError.message,
+            });
+          }
           if (registration.reply) {
             generated = {
               ok: registration.ok !== false,

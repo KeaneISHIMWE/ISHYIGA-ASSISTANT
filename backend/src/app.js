@@ -11,6 +11,7 @@ const { dashboardRouter } = require("./routes/dashboard");
 const { openapiRouter } = require("./routes/openapi");
 const { studioRouter } = require("./routes/studio");
 const { accountRouter } = require("./routes/account");
+const { aiStudioRouter } = require("./routes/aiStudio");
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/dashboard", dashboardRouter);
 app.use("/api/openapi.json", openapiRouter);
 app.use("/api/studio", studioRouter);
 app.use("/api/account", accountRouter);
+app.use("/api/ai-studio", aiStudioRouter);
 app.use("/webhook", webhookRouter);
 app.use(express.static(path.join(__dirname, "../public")));
 
